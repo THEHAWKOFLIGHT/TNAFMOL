@@ -1,0 +1,35 @@
+# TNAFMOL .gitignore
+# Git tracks: code, docs, configs, plots
+# W&B Artifacts + local filesystem: checkpoints, datasets, raw arrays
+
+# Model checkpoints
+*.pt
+# Exception: ref_stats.pt (small, critical data contract)
+!**/ref_stats.pt
+
+# Raw experiment arrays
+*.npy
+
+# Datasets
+*.npz
+*.h5
+
+# W&B local caches
+wandb/
+**/wandb/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment snapshots (logged as W&B Artifacts)
+*pip_freeze*.txt
+
+# Slurm logs
+slurm_*.out
+slurm_*.err
+
+# OS artifacts
+.DS_Store
+Thumbs.db
