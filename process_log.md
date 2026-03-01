@@ -38,3 +38,38 @@ PhD student-maintained. Append-only decisions, reasoning, file manifest.
 - Uracil is the only molecule with all 4 atom types (H, C, N, O)
 - Aspirin is the largest molecule (21 atoms) — defines the padding size
 - Total dataset size across all molecules: ~3.6M conformations
+
+---
+
+## 2026-03-01 — hyp_002: TarFlow OPTIMIZE
+**Branch:** `exp/hyp_002`
+
+### Decisions & Reasoning
+- TarFlow: transformer autoregressive normalizing flow. Autoregressive ordering over ATOMS (not coordinates).
+- Each atom gets affine params (shift + log_scale) from causal attention over previous atoms.
+- Within atom, all 3 coords transformed simultaneously with same affine params.
+- Alternating direction: even layers forward (0→N), odd layers reverse (N→0).
+- Atom type conditioning via learned embedding concatenated to position features at every layer.
+- Base distribution: isotropic Gaussian N(0,I) over all real atom coordinates.
+- Training loss: NLL = -sum(log_s) - log p_z(z) where z = forward(x).
+- Padding handled by zeroing out attention to/from padding positions AND zeroing log-det contributions from padded atoms.
+- INTENTION (write-before-execute): Implement TarFlow in src/model.py, then training loop in src/train.py.
+  Run diagnostic on GPU 8, then OPTIMIZE angles SANITY → HEURISTICS → SCALE.
+- Architecture choices: L=8 blocks, d_model=128, n_heads=4, FFN ratio 4x.
+  Start with per-atom feature dim = 3 (positions) + atom_type_emb_dim (16).
+- Input representation: input to each layer is (batch, max_atoms, 3) continuous positions
+  plus (batch, max_atoms, atom_type_emb_dim) atom type embeddings.
+  Transformer reads (3 + atom_type_emb_dim) features per atom, outputs (6) per atom: [shift(3), log_scale(3)].
+  Actually simpler: predict scalar log_scale + 3D shift from context — but spec says per-atom affine with same params for all 3 coords. Using: predict shift(3) + log_scale(1) per atom from context.
+
+### New Files Created
+- `src/model.py` — TarFlow model (TarFlowBlock, TarFlow)
+- `src/train.py` — training loop, evaluation, W&B logging
+- `experiments/hypothesis/hyp_002_tarflow/` — experiment directory (already exists)
+
+### Commits
+[to be filled]
+
+### Notes
+- GPU 8 (~17GB free) for test/validation runs; GPU 0 for full training
+- Target: valid_fraction > 0.5 on 5+/8 molecules
