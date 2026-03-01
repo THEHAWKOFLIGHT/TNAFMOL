@@ -1,6 +1,7 @@
 # TNAFMOL — Research Story
 
 ## Changelog
+- 2026-03-01 Updated after hyp_002 FAILURE. TarFlow autoregressive affine flow collapses on molecular data due to log_det exploitation. Added findings to Open Risks.
 - 2026-02-28 Initial authoring. Research story established from approved spec.
 
 ---
@@ -93,7 +94,7 @@ The energy oracle is applied identically to both models' outputs.
 
 ## Open Risks
 
-- TarFlow was designed for images. The autoregressive atom ordering may interact differently with 3D molecular structure.
+- **[CONFIRMED — hyp_002]** TarFlow was designed for images. The autoregressive atom ordering interacts pathologically with 3D molecular structure: the autoregressive affine flow's MLE objective exploits any unconstrained scale degree of freedom to maximize log_det, producing degenerate latent distributions regardless of model capacity. Three collapse modes identified (affine scale, shift, ActNorm scale). This architecture class is not viable for molecular conformations without fundamental modifications (e.g., log_det regularization, bounded scales, or non-affine coupling).
 - Canonical frame alignment quality depends on the mean structure reference per molecule.
 - Variable atom counts + padding may affect flow training differently than diffusion. Masked log-likelihood is essential.
 - Energy evaluation requires a reliable oracle; oracle errors could bias the comparison.
