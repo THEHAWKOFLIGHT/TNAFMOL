@@ -1,0 +1,63 @@
+{
+  "exp_id": "hyp_001",
+  "command": "EXECUTE",
+  "status": "completed",
+  "created": "2026-02-28T00:00:00Z",
+  "last_updated": "2026-02-28T16:45:00Z",
+  "machine": {
+    "host": "localhost",
+    "user": "kai_nelson",
+    "gpu": null,
+    "pid": null,
+    "claude_session_id": null
+  },
+  "artifacts": {
+    "dataset": "data/",
+    "checkpoints": [],
+    "raw_outputs": []
+  },
+  "steps": [
+    {
+      "name": "download_md17",
+      "status": "completed",
+      "acceptance": "Raw MD17 data for all 8 molecules downloaded and accessible",
+      "completed_at": "2026-02-28T16:35:00Z"
+    },
+    {
+      "name": "preprocess_canonical_frame",
+      "status": "completed",
+      "acceptance": "All 8 molecules preprocessed into canonical frame: CoM-centered, principal-axis-aligned, padded to max atom count with attention mask",
+      "completed_at": "2026-02-28T16:38:00Z"
+    },
+    {
+      "name": "compute_reference_stats",
+      "status": "completed",
+      "acceptance": "ref_stats.pt exists for each molecule dataset with energy stats, pairwise distance distributions, bond length distributions",
+      "completed_at": "2026-02-28T16:38:00Z"
+    },
+    {
+      "name": "create_metadata",
+      "status": "completed",
+      "acceptance": "metadata.json exists for each dataset directory with full schema per CLAUDE.md",
+      "completed_at": "2026-02-28T16:38:00Z"
+    },
+    {
+      "name": "train_test_split",
+      "status": "completed",
+      "acceptance": "80/10/10 train/val/test split per molecule, saved in dataset files",
+      "completed_at": "2026-02-28T16:38:00Z"
+    },
+    {
+      "name": "verification_and_visualization",
+      "status": "completed",
+      "acceptance": "Verification plots (energy distributions, pairwise distances, sample conformations) saved to results/",
+      "completed_at": "2026-02-28T16:38:00Z"
+    },
+    {
+      "name": "source_integration",
+      "status": "completed",
+      "acceptance": "No .py files in experiment dir; data pipeline code in src/",
+      "completed_at": "2026-02-28T16:40:00Z"
+    }
+  ]
+}

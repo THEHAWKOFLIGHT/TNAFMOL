@@ -1,0 +1,72 @@
+{
+  "name": "md17_toluene_v1",
+  "created": "2026-02-28",
+  "generator": "src/data.py",
+  "git_hash": "",
+  "physics": {
+    "system": "MD17",
+    "molecule": "toluene",
+    "N": 15,
+    "max_N": 21,
+    "atom_types": [
+      "C",
+      "C",
+      "C",
+      "C",
+      "C",
+      "C",
+      "C",
+      "H",
+      "H",
+      "H",
+      "H",
+      "H",
+      "H",
+      "H",
+      "H"
+    ],
+    "energy_unit": "kcal/mol",
+    "position_unit": "Angstrom",
+    "temperature": "500K (thermal MD)",
+    "level_of_theory": "DFT (PBE+vdW-TS)"
+  },
+  "generation": {
+    "method": "MD trajectory from MD17 dataset",
+    "n_samples": 442790,
+    "seed": 42
+  },
+  "statistics": {
+    "mean_energy": -170223.84722996957,
+    "std_energy": 5.099644116283459,
+    "min_energy": -170244.27638720776,
+    "max_energy": -170192.2007715048,
+    "median_energy": -170224.25513097557,
+    "position_mean": 0.07576586306095123,
+    "position_std": 1.3430670499801636,
+    "shape_positions": [
+      442790,
+      21,
+      3
+    ],
+    "dtype_positions": "float32"
+  },
+  "conventions": {
+    "coordinate_range": "CoM-centered, Kabsch-aligned",
+    "coordinate_representation": "canonical_frame_cartesian",
+    "normalization": "none (raw Angstroms after canonical frame)",
+    "padding": "zero-padded to 21 atoms",
+    "mask_convention": "1=real atom, 0=padding",
+    "atom_type_encoding": "index in {H:0, C:1, N:2, O:3}"
+  },
+  "split": {
+    "train": 354232,
+    "val": 44279,
+    "test": 44279,
+    "method": "random permutation, seed=42"
+  },
+  "checksum": {
+    "algorithm": "md5",
+    "value": "4ed9f55623b2102bddbf8cacac2c5015"
+  },
+  "ref_stats": "ref_stats.pt"
+}

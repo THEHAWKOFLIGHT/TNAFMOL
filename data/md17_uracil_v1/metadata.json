@@ -1,0 +1,69 @@
+{
+  "name": "md17_uracil_v1",
+  "created": "2026-02-28",
+  "generator": "src/data.py",
+  "git_hash": "",
+  "physics": {
+    "system": "MD17",
+    "molecule": "uracil",
+    "N": 12,
+    "max_N": 21,
+    "atom_types": [
+      "C",
+      "C",
+      "N",
+      "C",
+      "N",
+      "C",
+      "O",
+      "O",
+      "H",
+      "H",
+      "H",
+      "H"
+    ],
+    "energy_unit": "kcal/mol",
+    "position_unit": "Angstrom",
+    "temperature": "500K (thermal MD)",
+    "level_of_theory": "DFT (PBE+vdW-TS)"
+  },
+  "generation": {
+    "method": "MD trajectory from MD17 dataset",
+    "n_samples": 133770,
+    "seed": 42
+  },
+  "statistics": {
+    "mean_energy": -260107.31017103896,
+    "std_energy": 4.923021081239813,
+    "min_energy": -260120.67641144944,
+    "max_energy": -260080.75387001643,
+    "median_energy": -260107.77809470939,
+    "position_mean": 0.023554882034659386,
+    "position_std": 1.190999150276184,
+    "shape_positions": [
+      133770,
+      21,
+      3
+    ],
+    "dtype_positions": "float32"
+  },
+  "conventions": {
+    "coordinate_range": "CoM-centered, Kabsch-aligned",
+    "coordinate_representation": "canonical_frame_cartesian",
+    "normalization": "none (raw Angstroms after canonical frame)",
+    "padding": "zero-padded to 21 atoms",
+    "mask_convention": "1=real atom, 0=padding",
+    "atom_type_encoding": "index in {H:0, C:1, N:2, O:3}"
+  },
+  "split": {
+    "train": 107016,
+    "val": 13377,
+    "test": 13377,
+    "method": "random permutation, seed=42"
+  },
+  "checksum": {
+    "algorithm": "md5",
+    "value": "1f9ab25fdce8af1e1bd5e49716cc71ab"
+  },
+  "ref_stats": "ref_stats.pt"
+}
