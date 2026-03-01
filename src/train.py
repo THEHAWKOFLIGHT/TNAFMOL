@@ -62,6 +62,7 @@ DEFAULT_CONFIG = {
     "atom_type_emb_dim": 16,
     "dropout": 0.1,
     "log_scale_max": 0.5,  # limits |log_scale| per block to tanh*log_scale_max
+    "shift_only": True,   # if True: shift-only flow (no scale), prevents collapse
 
     # Training
     "n_steps": 5000,
@@ -258,6 +259,7 @@ def train(cfg: dict):
         dropout=cfg["dropout"],
         max_atoms=MAX_ATOMS,
         log_scale_max=cfg.get("log_scale_max", 0.5),
+        shift_only=cfg.get("shift_only", False),
     ).to(device)
 
     n_params = model.count_parameters()

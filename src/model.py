@@ -67,12 +67,14 @@ class TarFlowBlock(nn.Module):
         reverse: bool = False,
         dropout: float = 0.1,
         log_scale_max: float = 0.5,
+        shift_only: bool = False,
     ):
         super().__init__()
         self.d_model = d_model
         self.n_heads = n_heads
         self.reverse = reverse
         self.log_scale_max = log_scale_max
+        self.shift_only = shift_only
 
         # Learnable SOS token (provides context for the first atom)
         self.sos = nn.Parameter(torch.randn(1, 1, d_model) * 0.01)
@@ -100,8 +102,11 @@ class TarFlowBlock(nn.Module):
         )
         self.ffn_norm = nn.LayerNorm(d_model)
 
-        # Output head: d_model -> shift(3) + log_scale(1) per atom
-        self.out_proj = nn.Linear(d_model, 4)
+        # Output head:
+        #   shift_only=True: d_model -> shift(3) — volume-preserving (no scale)
+        #   shift_only=False: d_model -> shift(3) + log_scale(1) per atom
+        out_dim = 3 if shift_only else 4
+        self.out_proj = nn.Linear(d_model, out_dim)
 
         # Initialize output projection near zero for stable start
         nn.init.zeros_(self.out_proj.weight)
@@ -274,25 +279,28 @@ class TarFlowBlock(nn.Module):
             atom_out = atom_out.flip(1)
 
         # Predict affine params from context
-        params = self.out_proj(atom_out)   # (B, N, 4)
+        params = self.out_proj(atom_out)   # (B, N, 3 or 4)
         shift = params[..., :3]            # (B, N, 3)
-        log_scale = params[..., 3:4]       # (B, N, 1)
 
-        # Bound log_scale to prevent collapse/explosion
-        # tanh * log_scale_max: limits scale per block to exp(±log_scale_max)
-        # With L=8 blocks: total scale range = exp(±L * log_scale_max)
-        # Default 0.5: scale per block in [e^{-0.5}, e^{0.5}] = [0.6, 1.65]
-        # 8 blocks: [e^{-4}, e^4] = [0.018, 54] — allows meaningful transforms
-        # while preventing extreme collapse (tanh*3 allowed e^±24 = 10^10)
-        log_scale = torch.tanh(log_scale) * self.log_scale_max  # range [-max, max]
+        if self.shift_only:
+            # Volume-preserving: y_i = x_i + shift_i, log_det = 0
+            y = positions + shift
+            log_det = torch.zeros(positions.shape[0], device=positions.device)
+        else:
+            log_scale = params[..., 3:4]       # (B, N, 1)
 
-        # Apply affine transform: y_i = exp(log_scale_i) * x_i + shift_i
-        scale = log_scale.exp()            # (B, N, 1)
-        y = scale * positions + shift      # (B, N, 3)
+            # Bound log_scale to prevent collapse/explosion
+            # tanh * log_scale_max: limits scale per block to exp(±log_scale_max)
+            # With L=8 blocks: total scale range = exp(±L * log_scale_max)
+            log_scale = torch.tanh(log_scale) * self.log_scale_max  # range [-max, max]
 
-        # Log-determinant: each real atom contributes 3 * log_scale_i
-        log_scale_sq = log_scale.squeeze(-1)   # (B, N)
-        log_det = (3.0 * log_scale_sq * atom_mask).sum(dim=-1)  # (B,)
+            # Apply affine transform: y_i = exp(log_scale_i) * x_i + shift_i
+            scale = log_scale.exp()            # (B, N, 1)
+            y = scale * positions + shift      # (B, N, 3)
+
+            # Log-determinant: each real atom contributes 3 * log_scale_i
+            log_scale_sq = log_scale.squeeze(-1)   # (B, N)
+            log_det = (3.0 * log_scale_sq * atom_mask).sum(dim=-1)  # (B,)
 
         # Zero out padding positions
         y = y * atom_mask.unsqueeze(-1)
@@ -340,17 +348,20 @@ class TarFlowBlock(nn.Module):
             # Run transformer on current x_work (partially recovered)
             atom_out = self._run_transformer(x_work, emb_work, mask_work)  # (B, N, d_model)
 
-            params = self.out_proj(atom_out)  # (B, N, 4)
+            params = self.out_proj(atom_out)  # (B, N, 3 or 4)
             shift = params[..., :3]           # (B, N, 3)
-            log_scale = params[..., 3:4]      # (B, N, 1)
-            log_scale = torch.tanh(log_scale) * self.log_scale_max
-            scale = log_scale.exp()
-
-            # Recover atom at position `step` in causal ordering
             shift_step = shift[:, step, :]    # (B, 3)
-            scale_step = scale[:, step, :]    # (B, 1)
 
-            x_work[:, step, :] = (y_work[:, step, :] - shift_step) / scale_step
+            if self.shift_only:
+                # Volume-preserving inverse: x_i = y_i - shift_i
+                x_work[:, step, :] = y_work[:, step, :] - shift_step
+            else:
+                log_scale = params[..., 3:4]      # (B, N, 1)
+                log_scale = torch.tanh(log_scale) * self.log_scale_max
+                scale = log_scale.exp()
+                scale_step = scale[:, step, :]    # (B, 1)
+                # Recover atom at position `step` in causal ordering
+                x_work[:, step, :] = (y_work[:, step, :] - shift_step) / scale_step
 
         if self.reverse:
             x_work = x_work.flip(1)
@@ -390,6 +401,7 @@ class TarFlow(nn.Module):
         max_atoms: int = 21,
         dropout: float = 0.1,
         log_scale_max: float = 0.5,
+        shift_only: bool = False,
     ):
         super().__init__()
         self.n_blocks = n_blocks
@@ -397,6 +409,7 @@ class TarFlow(nn.Module):
         self.max_atoms = max_atoms
         self.atom_type_emb_dim = atom_type_emb_dim
         self.log_scale_max = log_scale_max
+        self.shift_only = shift_only
 
         # Atom type embedding (shared across all blocks)
         self.atom_type_emb = nn.Embedding(n_atom_types, atom_type_emb_dim)
@@ -414,6 +427,7 @@ class TarFlow(nn.Module):
                 reverse=(i % 2 == 1),  # even=forward, odd=reverse
                 dropout=dropout,
                 log_scale_max=log_scale_max,
+                shift_only=shift_only,
             )
             for i in range(n_blocks)
         ])
