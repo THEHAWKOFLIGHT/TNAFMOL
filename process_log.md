@@ -142,4 +142,4 @@ PhD student-maintained. Append-only decisions, reasoning, file manifest.
 - Recommended next: either (a) use continuous normalizing flows (CNF/FFJORD) which don't have closed-form log_det and thus can't exploit it, or (b) implement diffusion model instead (no log_det at all), or (c) use fixed-scale coupling blocks (only shifts, but per-molecule normalized) with much more training
 
 ### Commits
-- (to be recorded after commit)
+- `caa321f` — [hyp_002] results: HEURISTICS val run complete — ActNorm collapse diagnosis and final experiment results
