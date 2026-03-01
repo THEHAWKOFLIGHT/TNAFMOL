@@ -1,17 +1,17 @@
 # TNAFMOL — Results
-**Last updated:** 2026-02-28 (project initialization)
+**Last updated:** 2026-02-28 after hyp_001
 
 ## Status
-Project initialized. No experiments completed yet. Starting with hyp_001 (data pipeline).
+Data pipeline complete. All 8 MD17 molecules preprocessed into canonical frame representation with reference statistics. Ready for model training.
 
 ## Experiments
 
 | ID | Method | Status |
 |----|--------|--------|
-| hyp_001 | MD17 data pipeline + canonical frame preprocessing | PENDING |
+| hyp_001 | MD17 data pipeline (download, canonical frame, ref stats) | DONE |
 
 ## Best Result
-No experiments completed yet.
+**hyp_001:** 8 MD17 molecules (aspirin, benzene, ethanol, malonaldehyde, naphthalene, salicylic_acid, toluene, uracil) downloaded and preprocessed. ~3.6M total conformations. Canonical frame: CoM-centered, Kabsch-aligned, padded to 21 atoms. Verified energy distributions, pairwise distances, and atom type encoding.
 
 ## What's Next
-hyp_001: Download MD17, preprocess all 8 molecules into canonical frame, compute reference statistics.
+hyp_002: TarFlow (transformer autoregressive normalizing flow) implementation and OPTIMIZE.
