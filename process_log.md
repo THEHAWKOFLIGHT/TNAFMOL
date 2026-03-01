@@ -87,9 +87,59 @@ PhD student-maintained. Append-only decisions, reasoning, file manifest.
 - `0388079` — [hyp_002] code: add log_scale_max param to prevent coordinate collapse
 - `ba4af6b` — [hyp_002] code: add shift_only mode to prevent log-det exploitation
 
+- **SANITY Sweep results:** Grid sweep (n_steps=5k/10k, lr=1e-4) — ALL runs plateau at loss=0.919 with grad_norm~0.001. No improvement with more steps or different LR. DIAGNOSIS: shift-only collapse — model learns shift≈x_i, mapping all data to z≈0. Samples from N(0,T²) with model≈raw Gaussian. Raw N(0, (2σ)²) gives >70% valid_fraction on all 8 molecules, but model provides no improvement over baseline.
+- **SANITY Angle EXHAUSTED:** shift_only flow converges to degenerate solution (shift≈x, z≈0). This is equivalent to the affine collapse but via shift alone. Root cause: the global minimum of NLL with shift_only is shift=x → z=0 → ||z||²→0.
+- **HEURISTICS ANGLE (INTENTION):** Re-enable affine flow but add per-atom ActNorm (Activation Normalization, Kingma & Dhariwal 2018, GLOW) after each coupling block to prevent cumulative scale drift. ActNorm: after each block, normalize per-atom-position output to zero mean and unit variance with learned scale/bias. This is a standard normalizing flow component missing from the current implementation. Combined with proper data normalization (per-molecule global std scaling), this should prevent both affine and shift collapses.
+
+### New Files Created (continued)
+- `experiments/hypothesis/hyp_002_tarflow/angles/sanity/sweep/runs/` — sweep run outputs (2 completed: 5k/lr=1e-4, 10k/lr=1e-4)
+
+### Commits
+- `a4d27f7` — [hyp_002] code: fix W&B sweep integration and unique per-run output dirs
+
 ### Notes
 - GPU 8 (~17GB free) for test/validation runs; GPU 0 for full training
 - Target: valid_fraction > 0.5 on 5+/8 molecules
 - Shift-only flow is volume-preserving: log_det = 0 always. NLL = -log p_z(z) / n_dof = 0.919 at optimum (standard Gaussian entropy).
 - Val_shift results at T=1.0: ethanol=22.8%, malonaldehyde=22.4%, uracil=7.2%, benzene=6.6%. More steps needed.
-- W&B sweep URL will be logged here once initialized.
+- Shift collapse: model learns shift≈x, z≈0. At T=2σ (T≈2 for most molecules), raw N(0,T²) gives >70% valid on all 8 molecules.
+- Model NOT helping — samples equivalent to raw Gaussian at T=2σ_data.
+
+---
+
+## 2026-03-01 — hyp_002 HEURISTICS: ActNorm validation run
+**Branch:** `exp/hyp_002`
+
+### Decisions & Reasoning (INTENTION)
+- SANITY angle (shift_only) exhausted: loss plateau at 0.919 (Gaussian entropy floor), shift collapse confirmed (z.std=0.0007), model equivalent to raw Gaussian sampler.
+- HEURISTICS angle: ActNorm (Kingma & Dhariwal 2018, GLOW paper) after each affine coupling block. Re-enable full affine flow (shift_only=False). ActNorm normalizes per-atom-position output to N(0,1) via data-dependent initialization, adds log_det contribution, breaks both shift and scale collapse mechanisms.
+- ActNorm implemented in src/model.py as dedicated nn.Module with learned shift+log_scale per atom per coord. TarFlow supports use_actnorm=True parameter.
+- Validation run: 5000 steps, lr=3e-4, batch_size=256, cuda:0. Promising if valid_fraction > 0.1 on any molecule at T=1.0.
+- Quick test (200 steps) showed: loss=-1.47 (vs 0.919 floor), latent z.std=1.0 (properly normalized), grad_norm~20 (model is learning). PROCEEDING to full 5k val run.
+
+### HEURISTICS Val Run Results — FAILURE (ActNorm collapse)
+- Loss converged to -9.67 at step 5000 (vs 0.919 for shift-only — clear improvement in forward direction)
+- Forward pass verified: z ~ N(0,1) correctly, total log_det = 428, NLL per dof = -15.38 (excellent)
+- Samples: valid_fraction = 0.000 on all 8 molecules
+- Root cause: **ActNorm log_scale exploitation** — model learned negative log_scale (≈-0.81) in ActNorm layers
+  - Forward: large log_det from ActNorm contraction (contribution ≈ 51 per layer × 8 = 408)
+  - Inverse (sampling): cumulative contraction = exp(-0.81)^8 ≈ 0.0013 on the noise
+  - Temperature has ZERO effect on sample diversity (verified T=0.5 to T=50.0 all give std=0.2675)
+  - Sample spread (std=0.27 Å) is 3.3× smaller than real data (std=0.91 Å)
+  - All samples cluster together with min pairwise dist ≈ 0.16 Å (atoms on top of each other)
+- Same root class as shift and affine collapse: model exploits any unconstrained scale DOF to maximize log_det
+- HEURISTICS ANGLE FAILED: ActNorm did not prevent collapse, it created a new collapse mode
+
+### SCALE Angle Assessment — SKIPPED (not applicable)
+- SCALE (bigger model, more steps) will NOT fix collapse: this is NOT a capacity problem
+- The collapse mechanism is architectural: unconstrained affine + ActNorm always finds degenerate log_det solutions
+- Increasing d_model or n_steps will produce the same collapse faster, not fix it
+- SCALE skipped with justification: degenerate solution is independent of capacity
+
+### Optimize Failure Report
+- All 3 angles exhausted (SANITY: shift collapse; HEURISTICS: ActNorm scale collapse; SCALE: skipped as non-applicable)
+- Root cause: autoregressive affine flow objective (maximize log_det) always finds degenerate solutions with unconstrained scale parameters
+- Recommended next: either (a) use continuous normalizing flows (CNF/FFJORD) which don't have closed-form log_det and thus can't exploit it, or (b) implement diffusion model instead (no log_det at all), or (c) use fixed-scale coupling blocks (only shifts, but per-molecule normalized) with much more training
+
+### Commits
+- (to be recorded after commit)
