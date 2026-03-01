@@ -66,11 +66,13 @@ class TarFlowBlock(nn.Module):
         in_features: int = 19,  # 3 (pos) + 16 (atom type emb)
         reverse: bool = False,
         dropout: float = 0.1,
+        log_scale_max: float = 0.5,
     ):
         super().__init__()
         self.d_model = d_model
         self.n_heads = n_heads
         self.reverse = reverse
+        self.log_scale_max = log_scale_max
 
         # Learnable SOS token (provides context for the first atom)
         self.sos = nn.Parameter(torch.randn(1, 1, d_model) * 0.01)
@@ -276,8 +278,13 @@ class TarFlowBlock(nn.Module):
         shift = params[..., :3]            # (B, N, 3)
         log_scale = params[..., 3:4]       # (B, N, 1)
 
-        # Bound log_scale to prevent explosion
-        log_scale = torch.tanh(log_scale) * 3.0  # range [-3, 3]
+        # Bound log_scale to prevent collapse/explosion
+        # tanh * log_scale_max: limits scale per block to exp(±log_scale_max)
+        # With L=8 blocks: total scale range = exp(±L * log_scale_max)
+        # Default 0.5: scale per block in [e^{-0.5}, e^{0.5}] = [0.6, 1.65]
+        # 8 blocks: [e^{-4}, e^4] = [0.018, 54] — allows meaningful transforms
+        # while preventing extreme collapse (tanh*3 allowed e^±24 = 10^10)
+        log_scale = torch.tanh(log_scale) * self.log_scale_max  # range [-max, max]
 
         # Apply affine transform: y_i = exp(log_scale_i) * x_i + shift_i
         scale = log_scale.exp()            # (B, N, 1)
@@ -336,7 +343,7 @@ class TarFlowBlock(nn.Module):
             params = self.out_proj(atom_out)  # (B, N, 4)
             shift = params[..., :3]           # (B, N, 3)
             log_scale = params[..., 3:4]      # (B, N, 1)
-            log_scale = torch.tanh(log_scale) * 3.0
+            log_scale = torch.tanh(log_scale) * self.log_scale_max
             scale = log_scale.exp()
 
             # Recover atom at position `step` in causal ordering
@@ -382,12 +389,14 @@ class TarFlow(nn.Module):
         n_atom_types: int = 4,
         max_atoms: int = 21,
         dropout: float = 0.1,
+        log_scale_max: float = 0.5,
     ):
         super().__init__()
         self.n_blocks = n_blocks
         self.d_model = d_model
         self.max_atoms = max_atoms
         self.atom_type_emb_dim = atom_type_emb_dim
+        self.log_scale_max = log_scale_max
 
         # Atom type embedding (shared across all blocks)
         self.atom_type_emb = nn.Embedding(n_atom_types, atom_type_emb_dim)
@@ -404,6 +413,7 @@ class TarFlow(nn.Module):
                 in_features=in_features,
                 reverse=(i % 2 == 1),  # even=forward, odd=reverse
                 dropout=dropout,
+                log_scale_max=log_scale_max,
             )
             for i in range(n_blocks)
         ])
