@@ -63,6 +63,7 @@ DEFAULT_CONFIG = {
     "dropout": 0.1,
     "log_scale_max": 0.5,  # limits |log_scale| per block to tanh*log_scale_max
     "shift_only": True,   # if True: shift-only flow (no scale), prevents collapse
+    "use_actnorm": False,  # if True: add ActNorm after each block (prevents cumulative scale drift)
 
     # Training
     "n_steps": 5000,
@@ -270,6 +271,7 @@ def train(cfg: dict):
         max_atoms=MAX_ATOMS,
         log_scale_max=cfg.get("log_scale_max", 0.5),
         shift_only=cfg.get("shift_only", False),
+        use_actnorm=cfg.get("use_actnorm", False),
     ).to(device)
 
     n_params = model.count_parameters()

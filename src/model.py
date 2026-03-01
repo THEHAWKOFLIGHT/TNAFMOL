@@ -39,6 +39,135 @@ from typing import Optional, Tuple
 
 
 # =============================================================================
+# ActNorm
+# =============================================================================
+
+class ActNorm(nn.Module):
+    """Activation Normalization for normalizing flows.
+
+    Per-atom affine normalization with data-dependent initialization.
+    Normalizes each atom's 3D position to zero mean and unit std using
+    learned shift and log_scale parameters. Initialized on the first batch.
+
+    Reference: Kingma & Dhariwal, "Glow: Generative flow with invertible 1x1
+    convolutions", NeurIPS 2018.
+
+    Args:
+        max_atoms: maximum number of atoms (padded dimension size)
+    """
+
+    def __init__(self, max_atoms: int = 21):
+        super().__init__()
+        self.max_atoms = max_atoms
+        # Learned per-atom shift and log_scale: shape (1, max_atoms, 3)
+        # shift: subtract the learned mean
+        # log_scale: divide by exp(log_scale) = learned std
+        self.shift = nn.Parameter(torch.zeros(1, max_atoms, 3))
+        self.log_scale = nn.Parameter(torch.zeros(1, max_atoms, 3))
+        self.initialized = False
+
+    @torch.no_grad()
+    def initialize(self, positions: torch.Tensor, atom_mask: torch.Tensor):
+        """Data-dependent initialization: set shift and log_scale from first batch.
+
+        After init, the output y = (x - shift) * exp(-log_scale) ~ N(0,1) per atom.
+
+        Args:
+            positions: (B, N, 3) input positions
+            atom_mask: (B, N) or (N,) 1=real, 0=padding
+        """
+        B, N, _ = positions.shape
+
+        # Broadcast mask to (B, N, 1)
+        if atom_mask.dim() == 1:
+            mask = atom_mask.unsqueeze(0).expand(B, -1)  # (B, N)
+        else:
+            mask = atom_mask  # (B, N)
+        mask_expanded = mask.unsqueeze(-1).float()  # (B, N, 1)
+
+        # Count valid (real) entries per atom slot: sum over batch dimension
+        # valid_count[j] = number of batches where atom j is real
+        valid_count = mask_expanded.sum(dim=0, keepdim=True)  # (1, N, 1)
+        valid_count = valid_count.clamp(min=1.0)
+
+        # Per-atom mean (average over batch, only counting real atoms)
+        mean = (positions * mask_expanded).sum(dim=0, keepdim=True) / valid_count  # (1, N, 3)
+
+        # Per-atom std (average over batch, only counting real atoms)
+        diff = (positions - mean) * mask_expanded  # (B, N, 3)
+        var = (diff ** 2).sum(dim=0, keepdim=True) / valid_count  # (1, N, 3)
+        std = (var + 1e-6).sqrt()  # (1, N, 3)
+
+        # Set parameters: forward transform is y = (x - shift) * exp(-log_scale)
+        # So to normalize: shift = mean, exp(log_scale) = std → log_scale = log(std)
+        # Check: y = (x - mean) * exp(-log(std)) = (x - mean) / std ~ N(0,1)
+        self.shift.data.copy_(mean)
+        self.log_scale.data.copy_(std.log())
+        self.initialized = True
+
+    def forward(
+        self,
+        positions: torch.Tensor,
+        atom_mask: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """ActNorm forward: y = (x - shift) * exp(-log_scale).
+
+        Args:
+            positions: (B, N, 3) input
+            atom_mask: (B, N) or (N,) 1=real, 0=padding
+
+        Returns:
+            y: (B, N, 3) normalized positions
+            log_det: (B,) log-determinant contribution
+        """
+        if not self.initialized:
+            # Lazy init on first forward call
+            self.initialize(positions, atom_mask)
+
+        if atom_mask.dim() == 1:
+            mask = atom_mask.unsqueeze(0).expand(positions.shape[0], -1)
+        else:
+            mask = atom_mask
+
+        # Normalize: y = (x - shift) * exp(-log_scale)
+        y = (positions - self.shift) * (-self.log_scale).exp()
+
+        # Zero out padding
+        y = y * mask.unsqueeze(-1)
+
+        # Log-det: each real atom contributes -3 * sum(log_scale) per coordinate
+        # log_det per sample = sum_real_atoms(-3 * log_scale_per_coord)
+        # = sum_real_atoms(-log_scale_x - log_scale_y - log_scale_z)
+        # But log_scale is (1, N, 3), so sum over coords:
+        neg_log_scale_sum = -self.log_scale.sum(dim=-1)  # (1, N)
+        log_det = (neg_log_scale_sum * mask).sum(dim=-1)  # (B,)
+
+        return y, log_det
+
+    def inverse(
+        self,
+        y: torch.Tensor,
+        atom_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """ActNorm inverse: x = y * exp(log_scale) + shift.
+
+        Args:
+            y: (B, N, 3) normalized positions
+            atom_mask: (B, N) or (N,) 1=real, 0=padding
+
+        Returns:
+            x: (B, N, 3) unnormalized positions
+        """
+        if atom_mask.dim() == 1:
+            mask = atom_mask.unsqueeze(0).expand(y.shape[0], -1)
+        else:
+            mask = atom_mask
+
+        x = y * self.log_scale.exp() + self.shift
+        return x * mask.unsqueeze(-1)
+
+
+# =============================================================================
 # TarFlow Block
 # =============================================================================
 
@@ -402,6 +531,7 @@ class TarFlow(nn.Module):
         dropout: float = 0.1,
         log_scale_max: float = 0.5,
         shift_only: bool = False,
+        use_actnorm: bool = False,
     ):
         super().__init__()
         self.n_blocks = n_blocks
@@ -410,6 +540,7 @@ class TarFlow(nn.Module):
         self.atom_type_emb_dim = atom_type_emb_dim
         self.log_scale_max = log_scale_max
         self.shift_only = shift_only
+        self.use_actnorm = use_actnorm
 
         # Atom type embedding (shared across all blocks)
         self.atom_type_emb = nn.Embedding(n_atom_types, atom_type_emb_dim)
@@ -431,6 +562,16 @@ class TarFlow(nn.Module):
             )
             for i in range(n_blocks)
         ])
+
+        # ActNorm layers: one per block (applied after each block)
+        # Only used when use_actnorm=True
+        if use_actnorm:
+            self.actnorm_layers = nn.ModuleList([
+                ActNorm(max_atoms=max_atoms)
+                for _ in range(n_blocks)
+            ])
+        else:
+            self.actnorm_layers = None
 
     def _prepare_inputs(
         self,
@@ -482,9 +623,16 @@ class TarFlow(nn.Module):
         z = positions
         total_log_det = torch.zeros(B, device=device)
 
-        for block in self.blocks:
-            z, log_det = block(z, atom_type_emb, atom_mask)
-            total_log_det = total_log_det + log_det
+        if self.use_actnorm:
+            for block, actnorm in zip(self.blocks, self.actnorm_layers):
+                z, log_det = block(z, atom_type_emb, atom_mask)
+                total_log_det = total_log_det + log_det
+                z, an_log_det = actnorm(z, atom_mask)
+                total_log_det = total_log_det + an_log_det
+        else:
+            for block in self.blocks:
+                z, log_det = block(z, atom_type_emb, atom_mask)
+                total_log_det = total_log_det + log_det
 
         return z, total_log_det
 
@@ -581,10 +729,15 @@ class TarFlow(nn.Module):
         # Get atom type embeddings
         atom_type_emb = self.atom_type_emb(atom_types_b)  # (B, N, emb_dim)
 
-        # Apply inverse blocks in reverse order
+        # Apply inverse blocks (and ActNorm) in reverse order
         x = z
-        for block in reversed(self.blocks):
-            x = block.inverse(x, atom_type_emb, atom_mask_b)
+        if self.use_actnorm:
+            for block, actnorm in zip(reversed(self.blocks), reversed(self.actnorm_layers)):
+                x = actnorm.inverse(x, atom_mask_b)
+                x = block.inverse(x, atom_type_emb, atom_mask_b)
+        else:
+            for block in reversed(self.blocks):
+                x = block.inverse(x, atom_type_emb, atom_mask_b)
 
         return x
 
