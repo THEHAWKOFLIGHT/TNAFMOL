@@ -218,30 +218,40 @@ def train(cfg: dict):
     output_dir = os.path.join(project_root, cfg["output_dir"])
 
     # Determine output subdirectory based on angle/stage
-    stage_dir = os.path.join(output_dir, "angles", cfg["angle"], cfg["stage"])
+    # For sweep runs: use a unique subdir per run (keyed by n_steps and lr)
+    stage_subdir = cfg["stage"]
+    if cfg["stage"] == "sweep":
+        lr_str = f"lr{cfg['lr']:.0e}".replace("-0", "-").replace("+0", "")
+        stage_subdir = f"sweep/runs/run_{cfg['n_steps']}steps_{lr_str}"
+    stage_dir = os.path.join(output_dir, "angles", cfg["angle"], stage_subdir)
     os.makedirs(stage_dir, exist_ok=True)
     raw_dir = os.path.join(stage_dir, "raw")
     os.makedirs(raw_dir, exist_ok=True)
 
-    # W&B init
-    run_name = f"hyp_002_{cfg['angle']}_{cfg['stage']}"
-    if cfg.get("run_name_suffix"):
-        run_name = run_name + "_" + cfg["run_name_suffix"]
+    # W&B: if a run is already active (called from sweep agent), reuse it
+    # Otherwise, init a new run.
+    if wandb.run is None:
+        run_name = f"hyp_002_{cfg['angle']}_{cfg['stage']}"
+        if cfg.get("run_name_suffix"):
+            run_name = run_name + "_" + cfg["run_name_suffix"]
 
-    tags = list(cfg.get("wandb_tags", []))
-    if cfg["angle"] not in tags:
-        tags.append(cfg["angle"])
-    if cfg["stage"] not in tags:
-        tags.append(cfg["stage"])
+        tags = list(cfg.get("wandb_tags", []))
+        if cfg["angle"] not in tags:
+            tags.append(cfg["angle"])
+        if cfg["stage"] not in tags:
+            tags.append(cfg["stage"])
 
-    run = wandb.init(
-        project=cfg["wandb_project"],
-        name=run_name,
-        group=cfg["wandb_group"],
-        tags=tags,
-        notes=cfg.get("wandb_notes", ""),
-        config=cfg,
-    )
+        wandb.init(
+            project=cfg["wandb_project"],
+            name=run_name,
+            group=cfg["wandb_group"],
+            tags=tags,
+            notes=cfg.get("wandb_notes", ""),
+            config=cfg,
+        )
+    else:
+        # Already running inside a sweep agent — update config with any new keys
+        wandb.config.update(cfg, allow_val_change=True)
 
     assert wandb.run is not None, "W&B init failed"
     print(f"W&B run: {wandb.run.url}")

@@ -67,9 +67,29 @@ PhD student-maintained. Append-only decisions, reasoning, file manifest.
 - `src/train.py` — training loop, evaluation, W&B logging
 - `experiments/hypothesis/hyp_002_tarflow/` — experiment directory (already exists)
 
+### Decisions & Reasoning (continued)
+- **Diagnostic (1000 steps, no shift_only):** Model learned to chain large log_scale across all 8 blocks, mapping all samples to z≈0 (log_det ≈ 568, max with tanh*3 clamp). Root cause: affine flow can always exploit log_det by expanding forward direction. Valid fraction = 0 on all molecules.
+- **SANITY Fix 1 (log_scale_max=0.5):** Reduced tanh bound from 3.0 to 0.5. Insufficient — model finds chain-shift alternative: expand by e^0.5 per block, then shift to cancel, log_det still hits max (108). Valid fraction still 0.
+- **SANITY Fix 2 (shift_only=True):** Volume-preserving flow (log_det=0). Prevents exploit entirely. Optimal solution becomes conditional mean predictor z_i = x_i - E[x_i|x_{<i}]. 1000-step validation: loss converges to 0.919 = -log N(0,1)/dof, ethanol/malonaldehyde valid_fraction ~22% at T=1.0. PROMISING.
+- SOS (start-of-sequence) token prepended to atom sequence: prevents NaN in attention when atom 0 has no causal context.
+- Combined float additive causal+padding mask: eliminates PyTorch deprecation warning for mixed mask types.
+- **SANITY Sweep (INTENTION):** Grid sweep over n_steps=(5k,10k,20k) × lr=(1e-4,3e-4) with warmup_steps=500, batch_size=256, shift_only=True. Using W&B sweep agent via /tmp/sanity_sweep.py. Run on cuda:0.
+
+### New Files Created
+- `src/model.py` — TarFlow model (TarFlowBlock with SOS token, combined causal+padding mask; TarFlow with alternating direction blocks, shift_only mode)
+- `src/train.py` — training loop, per-molecule evaluation, W&B logging with artifacts
+- `experiments/hypothesis/hyp_002_tarflow/angles/diagnostic/` — diagnostic run outputs
+- `experiments/hypothesis/hyp_002_tarflow/angles/sanity/val/` — SANITY val run (affine, collapsed)
+- `experiments/hypothesis/hyp_002_tarflow/angles/sanity/val_shift/` — SANITY shift_only val run (promising)
+
 ### Commits
-[to be filled]
+- `949135f` — [hyp_002] code: implement TarFlow model and training loop
+- `0388079` — [hyp_002] code: add log_scale_max param to prevent coordinate collapse
+- `ba4af6b` — [hyp_002] code: add shift_only mode to prevent log-det exploitation
 
 ### Notes
 - GPU 8 (~17GB free) for test/validation runs; GPU 0 for full training
 - Target: valid_fraction > 0.5 on 5+/8 molecules
+- Shift-only flow is volume-preserving: log_det = 0 always. NLL = -log p_z(z) / n_dof = 0.919 at optimum (standard Gaussian entropy).
+- Val_shift results at T=1.0: ethanol=22.8%, malonaldehyde=22.4%, uracil=7.2%, benzene=6.6%. More steps needed.
+- W&B sweep URL will be logged here once initialized.
