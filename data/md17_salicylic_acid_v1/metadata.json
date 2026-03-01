@@ -1,0 +1,73 @@
+{
+  "name": "md17_salicylic_acid_v1",
+  "created": "2026-02-28",
+  "generator": "src/data.py",
+  "git_hash": "",
+  "physics": {
+    "system": "MD17",
+    "molecule": "salicylic_acid",
+    "N": 16,
+    "max_N": 21,
+    "atom_types": [
+      "C",
+      "C",
+      "C",
+      "O",
+      "C",
+      "C",
+      "C",
+      "C",
+      "O",
+      "O",
+      "H",
+      "H",
+      "H",
+      "H",
+      "H",
+      "H"
+    ],
+    "energy_unit": "kcal/mol",
+    "position_unit": "Angstrom",
+    "temperature": "500K (thermal MD)",
+    "level_of_theory": "DFT (PBE+vdW-TS)"
+  },
+  "generation": {
+    "method": "MD trajectory from MD17 dataset",
+    "n_samples": 320231,
+    "seed": 42
+  },
+  "statistics": {
+    "mean_energy": -311033.75868197385,
+    "std_energy": 5.4163097238486335,
+    "min_energy": -311050.42777189135,
+    "max_energy": -311002.96103048965,
+    "median_energy": -311034.15837128204,
+    "position_mean": -0.17959600687026978,
+    "position_std": 1.435882568359375,
+    "shape_positions": [
+      320231,
+      21,
+      3
+    ],
+    "dtype_positions": "float32"
+  },
+  "conventions": {
+    "coordinate_range": "CoM-centered, Kabsch-aligned",
+    "coordinate_representation": "canonical_frame_cartesian",
+    "normalization": "none (raw Angstroms after canonical frame)",
+    "padding": "zero-padded to 21 atoms",
+    "mask_convention": "1=real atom, 0=padding",
+    "atom_type_encoding": "index in {H:0, C:1, N:2, O:3}"
+  },
+  "split": {
+    "train": 256184,
+    "val": 32023,
+    "test": 32024,
+    "method": "random permutation, seed=42"
+  },
+  "checksum": {
+    "algorithm": "md5",
+    "value": "b21cb9741619524670d1c3c9b7d31913"
+  },
+  "ref_stats": "ref_stats.pt"
+}

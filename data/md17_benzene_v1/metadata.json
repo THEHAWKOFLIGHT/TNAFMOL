@@ -1,0 +1,69 @@
+{
+  "name": "md17_benzene_v1",
+  "created": "2026-02-28",
+  "generator": "src/data.py",
+  "git_hash": "",
+  "physics": {
+    "system": "MD17",
+    "molecule": "benzene",
+    "N": 12,
+    "max_N": 21,
+    "atom_types": [
+      "C",
+      "C",
+      "C",
+      "C",
+      "C",
+      "C",
+      "H",
+      "H",
+      "H",
+      "H",
+      "H",
+      "H"
+    ],
+    "energy_unit": "kcal/mol",
+    "position_unit": "Angstrom",
+    "temperature": "500K (thermal MD)",
+    "level_of_theory": "DFT (PBE+vdW-TS)"
+  },
+  "generation": {
+    "method": "MD trajectory from MD17 dataset",
+    "n_samples": 627983,
+    "seed": 42
+  },
+  "statistics": {
+    "mean_energy": -146527.27916135502,
+    "std_energy": 2.345499180444889,
+    "min_energy": -146536.1192,
+    "max_energy": -146513.63580000002,
+    "median_energy": -146527.47280000002,
+    "position_mean": 5.515343218576163e-06,
+    "position_std": 1.167116641998291,
+    "shape_positions": [
+      627983,
+      21,
+      3
+    ],
+    "dtype_positions": "float32"
+  },
+  "conventions": {
+    "coordinate_range": "CoM-centered, Kabsch-aligned",
+    "coordinate_representation": "canonical_frame_cartesian",
+    "normalization": "none (raw Angstroms after canonical frame)",
+    "padding": "zero-padded to 21 atoms",
+    "mask_convention": "1=real atom, 0=padding",
+    "atom_type_encoding": "index in {H:0, C:1, N:2, O:3}"
+  },
+  "split": {
+    "train": 502386,
+    "val": 62798,
+    "test": 62799,
+    "method": "random permutation, seed=42"
+  },
+  "checksum": {
+    "algorithm": "md5",
+    "value": "3d789df329633565a3119d9f0cbf023c"
+  },
+  "ref_stats": "ref_stats.pt"
+}

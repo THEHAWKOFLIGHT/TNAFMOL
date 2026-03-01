@@ -1,0 +1,66 @@
+{
+  "name": "md17_malonaldehyde_v1",
+  "created": "2026-02-28",
+  "generator": "src/data.py",
+  "git_hash": "",
+  "physics": {
+    "system": "MD17",
+    "molecule": "malonaldehyde",
+    "N": 9,
+    "max_N": 21,
+    "atom_types": [
+      "C",
+      "C",
+      "C",
+      "O",
+      "O",
+      "H",
+      "H",
+      "H",
+      "H"
+    ],
+    "energy_unit": "kcal/mol",
+    "position_unit": "Angstrom",
+    "temperature": "500K (thermal MD)",
+    "level_of_theory": "DFT (PBE+vdW-TS)"
+  },
+  "generation": {
+    "method": "MD trajectory from MD17 dataset",
+    "n_samples": 993237,
+    "seed": 42
+  },
+  "statistics": {
+    "mean_energy": -167501.833375358,
+    "std_energy": 4.139863758749648,
+    "min_energy": -167514.2130896381,
+    "max_energy": -167470.38660026673,
+    "median_energy": -167502.25538624823,
+    "position_mean": -0.07836194336414337,
+    "position_std": 1.0013799667358398,
+    "shape_positions": [
+      993237,
+      21,
+      3
+    ],
+    "dtype_positions": "float32"
+  },
+  "conventions": {
+    "coordinate_range": "CoM-centered, Kabsch-aligned",
+    "coordinate_representation": "canonical_frame_cartesian",
+    "normalization": "none (raw Angstroms after canonical frame)",
+    "padding": "zero-padded to 21 atoms",
+    "mask_convention": "1=real atom, 0=padding",
+    "atom_type_encoding": "index in {H:0, C:1, N:2, O:3}"
+  },
+  "split": {
+    "train": 794589,
+    "val": 99323,
+    "test": 99325,
+    "method": "random permutation, seed=42"
+  },
+  "checksum": {
+    "algorithm": "md5",
+    "value": "46c66cd75c788f9fc7b4a3bf5d68b5a0"
+  },
+  "ref_stats": "ref_stats.pt"
+}
