@@ -1,0 +1,76 @@
+{
+  "exp_id": "hyp_002",
+  "command": "OPTIMIZE",
+  "status": "in_progress",
+  "created": "2026-03-01T00:00:00Z",
+  "last_updated": "2026-03-01T00:00:00Z",
+  "machine": {
+    "host": "localhost",
+    "user": "kai_nelson",
+    "gpu": "cuda:8",
+    "pid": null,
+    "claude_session_id": null
+  },
+  "artifacts": {
+    "dataset": "data/md17_*_v1/",
+    "checkpoints": [],
+    "raw_outputs": []
+  },
+  "steps": [
+    {
+      "name": "implement_tarflow",
+      "status": "pending",
+      "acceptance": "TarFlow model class in src/model.py with forward pass verified on single batch"
+    },
+    {
+      "name": "implement_training",
+      "status": "pending",
+      "acceptance": "Training loop in src/train.py with MLE loss, verified loss decreases on small run"
+    },
+    {
+      "name": "diagnostic",
+      "status": "pending",
+      "acceptance": "Diagnostic Report written with baseline analysis and root cause identified"
+    },
+    {
+      "name": "plan",
+      "status": "pending",
+      "acceptance": "OPTIMIZE Plan Sub-report approved by Postdoc"
+    },
+    {
+      "name": "angle_sanity",
+      "status": "pending",
+      "acceptance": "SANITY angle completed: validation run + sweep (if applicable) + full run"
+    },
+    {
+      "name": "angle_heuristics",
+      "status": "pending",
+      "acceptance": "HEURISTICS angle completed or skipped with justification"
+    },
+    {
+      "name": "angle_scale",
+      "status": "pending",
+      "acceptance": "SCALE angle completed or skipped with justification"
+    },
+    {
+      "name": "final_evaluation",
+      "status": "pending",
+      "acceptance": "Per-molecule evaluation metrics computed, all visualizations generated"
+    },
+    {
+      "name": "final_report",
+      "status": "pending",
+      "acceptance": "Final Experiment Report submitted with all required sections"
+    },
+    {
+      "name": "source_integration",
+      "status": "pending",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice"
+    },
+    {
+      "name": "merge_and_tag",
+      "status": "pending",
+      "acceptance": "Merged to main with tag hyp_002; pre-merge checks pass"
+    }
+  ]
+}
