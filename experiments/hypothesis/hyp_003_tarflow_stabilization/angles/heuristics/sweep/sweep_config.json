@@ -1,0 +1,20 @@
+{
+  "method": "bayes",
+  "metric": {
+    "name": "mean_valid_fraction",
+    "goal": "maximize"
+  },
+  "parameters": {
+    "ema_decay": {
+      "values": [0.995, 0.999]
+    },
+    "lr": {
+      "values": [1e-4, 3e-4, 1e-3]
+    },
+    "batch_size": {
+      "values": [256, 512]
+    }
+  },
+  "name": "hyp_003_heuristics_sweep",
+  "run_cap": 12
+}

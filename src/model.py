@@ -23,12 +23,19 @@ Training:
 - MLE: minimize NLL = -sum_i(3 * log_scale_i * mask_i) - log p_z(z)
   where z = forward(x), p_z is standard Gaussian.
   The log-det contribution from each atom is 3 * log_scale_i (since 3 coords scaled by same factor).
+- Optional log-det regularization: penalizes large log_det_per_dof values to prevent exploitation.
 
 Sampling:
 - z ~ N(0, I) for real atoms (padded atoms stay at 0)
 - Apply inverse transforms in reverse block order
   Inverse per atom: x_i = (y_i - shift_i) / exp(log_scale_i)
   Applied autoregressively.
+
+hyp_003 changes:
+- Replace tanh*log_scale_max clamping with asymmetric arctan clamping (Andrade et al. 2024)
+  alpha_pos bounds expansion, alpha_neg allows contraction — prevents log_det exploitation
+- Add log_det_reg_weight penalty on log_det_per_dof^2 to explicitly penalize exploitation
+- Add EMAModel class for heuristics angle
 """
 
 import math
@@ -39,7 +46,44 @@ from typing import Optional, Tuple
 
 
 # =============================================================================
-# ActNorm
+# Asymmetric soft clamping (Andrade et al. 2024)
+# =============================================================================
+
+def _asymmetric_clamp(s: torch.Tensor, alpha_pos: float = 0.1, alpha_neg: float = 2.0) -> torch.Tensor:
+    """Asymmetric soft clamping via arctan (Andrade et al. 2024).
+
+    For s >= 0: c(s) = (2/pi) * alpha_pos * arctan(s / alpha_pos)
+      -> bounds expansion to exp(alpha_pos) ~1.105x per layer
+    For s < 0: c(s) = (2/pi) * alpha_neg * arctan(s / alpha_neg)
+      -> allows contraction up to exp(-alpha_neg) per layer
+
+    Sanity checks:
+    - At s=0: c(0) = 0 (continuous, no discontinuity). CHECK.
+    - As s -> +inf: c(s) -> alpha_pos (hard upper bound on expansion). CHECK.
+    - As s -> -inf: c(s) -> -alpha_neg (hard lower bound, allows contraction). CHECK.
+    - Derivative at 0: (2/pi) * 1 for both sides = continuous derivative. CHECK.
+    - Symmetric case (alpha_pos = alpha_neg = alpha): c(s) = (2/pi)*alpha*arctan(s/alpha),
+      standard symmetric soft clamp used in Andrade et al. CHECK.
+
+    Args:
+        s: (B, N, 1) or any shape — raw log_scale predictions
+        alpha_pos: soft bound for positive s (expansion limit)
+        alpha_neg: soft bound for negative s (contraction limit)
+
+    Returns:
+        clamped s, same shape, bounded in (-alpha_neg, alpha_pos)
+    """
+    pos_mask = (s >= 0).float()
+    neg_mask = 1.0 - pos_mask
+    clamped = (
+        pos_mask * (2.0 / math.pi) * alpha_pos * torch.atan(s / alpha_pos)
+        + neg_mask * (2.0 / math.pi) * alpha_neg * torch.atan(s / alpha_neg)
+    )
+    return clamped
+
+
+# =============================================================================
+# ActNorm (kept for backward compatibility, not used in hyp_003)
 # =============================================================================
 
 class ActNorm(nn.Module):
@@ -99,7 +143,7 @@ class ActNorm(nn.Module):
         std = (var + 1e-6).sqrt()  # (1, N, 3)
 
         # Set parameters: forward transform is y = (x - shift) * exp(-log_scale)
-        # So to normalize: shift = mean, exp(log_scale) = std → log_scale = log(std)
+        # So to normalize: shift = mean, exp(log_scale) = std -> log_scale = log(std)
         # Check: y = (x - mean) * exp(-log(std)) = (x - mean) / std ~ N(0,1)
         self.shift.data.copy_(mean)
         self.log_scale.data.copy_(std.log())
@@ -185,6 +229,10 @@ class TarFlowBlock(nn.Module):
         in_features: dimension of input per atom (pos_dim + atom_type_emb_dim)
         reverse: if True, use reverse autoregressive ordering
         dropout: dropout rate
+        alpha_pos: soft clamp bound for positive log_scale (expansion limit)
+        alpha_neg: soft clamp bound for negative log_scale (contraction limit)
+        shift_only: if True, use volume-preserving (shift-only) flow
+        log_scale_max: DEPRECATED — kept for backward compat, ignored if alpha_pos/alpha_neg provided
     """
 
     def __init__(
@@ -195,14 +243,17 @@ class TarFlowBlock(nn.Module):
         in_features: int = 19,  # 3 (pos) + 16 (atom type emb)
         reverse: bool = False,
         dropout: float = 0.1,
-        log_scale_max: float = 0.5,
+        alpha_pos: float = 0.1,
+        alpha_neg: float = 2.0,
         shift_only: bool = False,
+        log_scale_max: float = 0.5,  # DEPRECATED — ignored, kept for compat
     ):
         super().__init__()
         self.d_model = d_model
         self.n_heads = n_heads
         self.reverse = reverse
-        self.log_scale_max = log_scale_max
+        self.alpha_pos = alpha_pos
+        self.alpha_neg = alpha_neg
         self.shift_only = shift_only
 
         # Learnable SOS token (provides context for the first atom)
@@ -418,10 +469,9 @@ class TarFlowBlock(nn.Module):
         else:
             log_scale = params[..., 3:4]       # (B, N, 1)
 
-            # Bound log_scale to prevent collapse/explosion
-            # tanh * log_scale_max: limits scale per block to exp(±log_scale_max)
-            # With L=8 blocks: total scale range = exp(±L * log_scale_max)
-            log_scale = torch.tanh(log_scale) * self.log_scale_max  # range [-max, max]
+            # Asymmetric soft clamp via arctan (Andrade et al. 2024)
+            # Bounds expansion to exp(alpha_pos) per layer, allows contraction to exp(-alpha_neg)
+            log_scale = _asymmetric_clamp(log_scale, self.alpha_pos, self.alpha_neg)
 
             # Apply affine transform: y_i = exp(log_scale_i) * x_i + shift_i
             scale = log_scale.exp()            # (B, N, 1)
@@ -486,7 +536,7 @@ class TarFlowBlock(nn.Module):
                 x_work[:, step, :] = y_work[:, step, :] - shift_step
             else:
                 log_scale = params[..., 3:4]      # (B, N, 1)
-                log_scale = torch.tanh(log_scale) * self.log_scale_max
+                log_scale = _asymmetric_clamp(log_scale, self.alpha_pos, self.alpha_neg)
                 scale = log_scale.exp()
                 scale_step = scale[:, step, :]    # (B, 1)
                 # Recover atom at position `step` in causal ordering
@@ -517,6 +567,11 @@ class TarFlow(nn.Module):
         n_atom_types: number of distinct atom types (default 4: H, C, N, O)
         max_atoms: max number of atoms (default 21 for MD17)
         dropout: dropout rate (default 0.1)
+        alpha_pos: soft clamp bound for positive log_scale — bounds expansion (default 0.1)
+        alpha_neg: soft clamp bound for negative log_scale — allows contraction (default 2.0)
+        shift_only: if True, use volume-preserving flow (default False)
+        use_actnorm: if True, add ActNorm after each block (not used in hyp_003)
+        log_scale_max: DEPRECATED — kept for backward compat, ignored
     """
 
     def __init__(
@@ -529,16 +584,19 @@ class TarFlow(nn.Module):
         n_atom_types: int = 4,
         max_atoms: int = 21,
         dropout: float = 0.1,
-        log_scale_max: float = 0.5,
+        alpha_pos: float = 0.1,
+        alpha_neg: float = 2.0,
         shift_only: bool = False,
         use_actnorm: bool = False,
+        log_scale_max: float = 0.5,  # DEPRECATED — kept for backward compat
     ):
         super().__init__()
         self.n_blocks = n_blocks
         self.d_model = d_model
         self.max_atoms = max_atoms
         self.atom_type_emb_dim = atom_type_emb_dim
-        self.log_scale_max = log_scale_max
+        self.alpha_pos = alpha_pos
+        self.alpha_neg = alpha_neg
         self.shift_only = shift_only
         self.use_actnorm = use_actnorm
 
@@ -557,7 +615,8 @@ class TarFlow(nn.Module):
                 in_features=in_features,
                 reverse=(i % 2 == 1),  # even=forward, odd=reverse
                 dropout=dropout,
-                log_scale_max=log_scale_max,
+                alpha_pos=alpha_pos,
+                alpha_neg=alpha_neg,
                 shift_only=shift_only,
             )
             for i in range(n_blocks)
@@ -641,21 +700,36 @@ class TarFlow(nn.Module):
         positions: torch.Tensor,
         atom_types: torch.Tensor,
         atom_mask: torch.Tensor,
+        log_det_reg_weight: float = 0.0,
     ) -> Tuple[torch.Tensor, dict]:
-        """Compute negative log-likelihood loss.
+        """Compute negative log-likelihood loss with optional log-det regularization.
 
         NLL = -log p(x) = -[log p_z(z) + total_log_det]
         log p_z(z) = -0.5 * sum_{real i} ||z_i||^2 - 0.5 * n_real * 3 * log(2*pi)
 
+        Optional log-det regularization (Andrade et al. 2024, hyp_003):
+        log_det_per_dof = total_log_det / (n_real * 3)
+        log_det_penalty = (log_det_per_dof^2).mean()
+        total_loss = nll_per_dof.mean() + log_det_reg_weight * log_det_penalty
+
+        This penalizes large log_det values, preventing the model from exploiting
+        scale DOFs to maximize log_det without learning the data distribution.
+
         Normalized by n_real * 3 (total degrees of freedom) for stable training.
+
+        Sanity checks for log_det_penalty:
+        - At log_det_per_dof=0: penalty=0. CHECK (no penalty when log_det is neutral).
+        - As |log_det_per_dof| grows: penalty grows quadratically. CHECK (soft quadratic barrier).
+        - Backward compat (log_det_reg_weight=0.0): penalty=0, no change. CHECK.
 
         Args:
             positions: (batch, max_atoms, 3)
             atom_types: (max_atoms,) or (batch, max_atoms)
             atom_mask: (max_atoms,) or (batch, max_atoms)
+            log_det_reg_weight: weight for log-det regularization penalty (default 0.0 = off)
 
         Returns:
-            loss: scalar — mean NLL per degree of freedom
+            loss: scalar — mean NLL per degree of freedom + optional log_det penalty
             info: dict with diagnostics
         """
         B = positions.shape[0]
@@ -682,13 +756,24 @@ class TarFlow(nn.Module):
         dof = n_real * 3.0  # (B,)
         nll_per_dof = nll / (dof + 1e-8)  # (B,)
 
-        loss = nll_per_dof.mean()
+        # Log-det per DOF diagnostic
+        log_det_per_dof = total_log_det / (dof + 1e-8)  # (B,)
+
+        # Log-det regularization penalty (Andrade et al. 2024)
+        log_det_penalty = (log_det_per_dof ** 2).mean()
+
+        # Total loss
+        nll_loss_only = nll_per_dof.mean()
+        loss = nll_loss_only + log_det_reg_weight * log_det_penalty
 
         info = {
             "nll": nll.mean().item(),
             "nll_per_dof": nll_per_dof.mean().item(),
+            "nll_loss_only": nll_loss_only.item(),
             "log_pz": log_pz.mean().item(),
             "total_log_det": total_log_det.mean().item(),
+            "log_det_per_dof": log_det_per_dof.mean().item(),
+            "log_det_penalty": log_det_penalty.item(),
             "n_real_mean": n_real.float().mean().item(),
         }
 
@@ -744,3 +829,49 @@ class TarFlow(nn.Module):
     def count_parameters(self) -> int:
         """Count trainable parameters."""
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+
+# =============================================================================
+# EMA Model (for HEURISTICS angle — SBG recipe, Tan et al. 2025)
+# =============================================================================
+
+class EMAModel:
+    """Exponential Moving Average of model parameters.
+
+    Reference: Tan, H., Tong, A., et al. "Scalable Equilibrium Sampling with
+    Sequential Boltzmann Generators," ICML 2025.
+
+    Used during evaluation: apply_shadow() temporarily swaps model params
+    to EMA weights, then restore() brings back the originals.
+
+    Args:
+        model: the nn.Module to track
+        decay: EMA decay factor (default 0.999, from SBG recipe)
+    """
+
+    def __init__(self, model: nn.Module, decay: float = 0.999):
+        self.model = model
+        self.decay = decay
+        self.shadow = {
+            name: param.clone().detach()
+            for name, param in model.named_parameters()
+        }
+
+    def update(self):
+        """Update shadow weights: shadow = decay * shadow + (1 - decay) * param."""
+        for name, param in self.model.named_parameters():
+            self.shadow[name].mul_(self.decay).add_(param.data, alpha=1 - self.decay)
+
+    def apply_shadow(self):
+        """Temporarily replace model params with EMA shadow weights."""
+        self.backup = {
+            name: param.clone()
+            for name, param in self.model.named_parameters()
+        }
+        for name, param in self.model.named_parameters():
+            param.data.copy_(self.shadow[name])
+
+    def restore(self):
+        """Restore original model params (after applying shadow for eval)."""
+        for name, param in self.model.named_parameters():
+            param.data.copy_(self.backup[name])

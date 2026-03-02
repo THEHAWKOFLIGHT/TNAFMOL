@@ -66,3 +66,60 @@ Downloaded and preprocessed all 8 MD17 molecules (aspirin, benzene, ethanol, mal
 - SANITY val_shift: `hyp_002_sanity_val_val_shift`
 - SANITY sweep: https://wandb.ai/kaityrusnelson1/tnafmol/sweeps/...
 - HEURISTICS val: https://wandb.ai/kaityrusnelson1/tnafmol/runs/ras6geue
+
+---
+
+### hyp_003 — TarFlow Stabilization via Soft Clamping + Soft Equivariance
+**Date:** 2026-03-01
+**Branch:** `exp/hyp_003`
+**Command:** OPTIMIZE
+**Status:** FAILURE (angle budget exhausted, primary criterion not met)
+**Success criterion:** valid_fraction ≥ 0.5 on ≥ 4/8 molecules
+
+**Architecture:** TarFlow (same as hyp_002) + three stabilization changes:
+1. Asymmetric soft scale clamping: _asymmetric_clamp(s, alpha_pos=0.02, alpha_neg=2.0) — replaces tanh, bounds expansion to ≈0.02 per layer
+2. Log-det regularization: loss += reg_weight × (log_det_per_dof)² — penalizes deviation from log_det=0
+3. Soft equivariance: random SO(3) rotation + CoM noise augmentation during training, unit-variance normalization (global_std=1.2905 Å)
+
+**Diagnostic (500 steps):**
+- log_det/dof = 0.78 (stable, not exploding like hyp_002)
+- valid_fraction = 0 on all molecules (new collapse mode: alpha_pos saturation)
+- Root cause: model sets log_scale ≈ +alpha_pos uniformly across all 8 blocks → log_det/dof = 8 × alpha_pos/π ≈ 0.78 → samples compressed by exp(-0.78 × dof) per atom
+
+**Angles attempted:**
+
+**Angle 1 — SANITY: All three fixes + regularization tuning**
+- SANITY val (2000 steps, α=0.05, reg=1.0, lr=3e-4): malonaldehyde 11.6%, ethanol 7.8% — PROMISING
+- SANITY sweep (24/30 runs, 3000 steps, Bayesian): best = α=0.02, reg=5, lr=1e-4 → mean VF 17.5%
+  - Top results: ethanol 39.3%, malonaldehyde 38.0%, uracil 26.3%, benzene 22.0%
+  - W&B sweep: https://wandb.ai/kaityrusnelson1/tnafmol/sweeps/rccehd8m
+- SANITY full (10000 steps, best sweep config): mean VF 13.1%
+  - ethanol 33.0%, malonaldehyde 32.6%, benzene 16.2%, uracil 13.8%
+  - Loss flat at 0.8689 from step 300 onward; log_det/dof locked at 0.100; best ckpt at step 500
+  - W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/o5naez7a
+- FAILED: 0/8 molecules ≥ 50%
+
+**Angle 2 — HEURISTICS: SBG training recipe (Tan et al. 2025)**
+- Changes: AdamW betas=(0.9,0.95), OneCycleLR pct_start=0.05, EMA decay=0.999, batch_size=512
+- Best SANITY hyperparams (α=0.02, reg=5) retained
+- HEURISTICS val (2000 steps, lr=3e-4): mean VF 16.8%, ethanol 41.3%, malonaldehyde 40.7% — PROMISING
+  - W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/o6pnle0k
+- HEURISTICS sweep (12 runs, 3000 steps): best = bs=512, ema=0.999, lr=1e-3 → mean VF 18.3% (BEST OVERALL)
+  - W&B sweep: https://wandb.ai/kaityrusnelson1/tnafmol/sweeps/cmgrp6jo
+- HEURISTICS full (20000 steps, best sweep config): mean VF 14.3%
+  - malonaldehyde 38.0%, ethanol 33.4%, uracil 13.6%, benzene 15.2%
+  - Same saturation pattern: loss flat at 0.8689, log_det locked at 0.100, best ckpt at step 2000
+  - W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/4079op64
+- FAILED: 0/8 molecules ≥ 50%
+
+**Angle 3 — SCALE: SKIPPED**
+- Justification: model saturates at step 150 — not capacity-limited. Loss flat from step 150 onward.
+  Alpha_pos saturation is a mathematical equilibrium, not a capacity limitation. Larger model would hit the same equilibrium at the same step count.
+
+**Best result:** mean valid fraction 18.3% (HEURISTICS sweep best config at 3000 steps). 0/8 molecules ≥ 50%.
+
+**Root cause diagnosis (deeper):** The NLL gradient pushes log_scale to the upper bound (+alpha_pos) while the log-det regularization gradient pulls toward 0. The two gradients reach a stable fixed point at log_det/dof = alpha_pos regardless of regularization weight, LR, or batch size. The alpha_pos saturation equilibrium is not a local minimum — it is an attractor. No gradient-based optimization can escape it without fundamentally changing the loss formulation.
+
+**Per-molecule pattern:** Clear inverse correlation between molecule size (n_atoms) and valid fraction. 9-atom molecules (ethanol, malonaldehyde): 33-38%. 21-atom molecules (aspirin): <1%. Each additional atom pair is an independent opportunity for close-collision failure due to residual compression.
+
+**Story fit:** CONFLICT — TarFlow is not viable for molecular conformations under standard MLE + regularization. Two consecutive failures confirm the architectural issue. Research story needs to pivot.

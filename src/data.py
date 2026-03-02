@@ -8,12 +8,21 @@ Handles:
 - One-hot atom type encoding
 - Train/val/test splitting
 - Data loading utilities for downstream models
+- Soft equivariance augmentation: SO(3) rotation + CoM noise (hyp_003)
+- Global std normalization across all molecules (hyp_003)
 
 Conventions:
 - Coordinates: Angstroms, CoM-centered, principal-axis-aligned
 - Energies: kcal/mol (raw DFT from MD17), no shifting
 - Atom types: one-hot [H, C, N, O] → indices {0, 1, 2, 3}
 - Padding: zeros for positions, zeros for atom types, mask=0 for padding
+
+hyp_003 additions:
+- augment_positions(): random SO(3) rotation + CoM noise per sample
+- compute_global_std(): single std over all real-atom positions across all molecules
+- MD17Dataset now accepts augment: bool and global_std: Optional[float]
+- If global_std is provided, positions are divided by global_std in __init__
+  (normalization happens AFTER canonical frame, BEFORE model input)
 """
 
 import os
@@ -26,6 +35,150 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch
 from scipy.spatial.transform import Rotation
+
+
+# =============================================================================
+# Soft equivariance augmentation (hyp_003)
+# =============================================================================
+
+def augment_positions(
+    positions: torch.Tensor,
+    mask: torch.Tensor,
+    com_noise_std: Optional[float] = None,
+) -> torch.Tensor:
+    """Apply soft equivariance augmentation: random SO(3) rotation + CoM noise.
+
+    Reference: Tan, H., Tong, A., et al. "Scalable Equilibrium Sampling with
+    Sequential Boltzmann Generators," ICML 2025. (Section 3.2: data augmentation)
+
+    Steps per sample:
+    1. Random SO(3) rotation: generate 3x3 random Gaussian matrix, QR decompose,
+       use Q as rotation (ensure det(Q)=+1 for proper rotation, not reflection).
+    2. CoM noise: add N(0, com_noise_std^2) to all real atom positions.
+    3. Zero out padding atoms.
+
+    Sanity checks:
+    - Rotation is proper: det(Q) = +1. Reflections (det=-1) are excluded. CHECK.
+    - Padding atoms are zeroed after augmentation. CHECK.
+    - CoM noise adds translation variance; canonical frame is not re-applied
+      (soft equivariance, not hard equivariance). This is intentional per SBG.
+
+    Args:
+        positions: (N, 3) or (B, N, 3) positions — may include padding
+        mask: (N,) or (B, N) 1=real atom, 0=padding
+        com_noise_std: std of CoM noise; if None, defaults to 1/sqrt(n_real)
+
+    Returns:
+        augmented positions, same shape as input
+    """
+    if positions.dim() == 2:
+        # Single sample: (N, 3) -> handle as batch of 1
+        positions = positions.unsqueeze(0)  # (1, N, 3)
+        mask = mask.unsqueeze(0) if mask.dim() == 1 else mask
+        squeeze_back = True
+    else:
+        squeeze_back = False
+
+    B, N, _ = positions.shape
+    device = positions.device
+    dtype = positions.dtype
+
+    # Build mask: (B, N, 1)
+    if mask.dim() == 1:
+        mask_3d = mask.unsqueeze(0).expand(B, -1).unsqueeze(-1).float()
+    else:
+        mask_3d = mask.unsqueeze(-1).float()  # (B, N, 1)
+
+    n_real = mask_3d.squeeze(-1).sum(dim=-1)  # (B,)
+
+    # Step 1: Random SO(3) rotation per sample
+    # Generate (B, 3, 3) random Gaussian matrices, QR-decompose to get orthogonal Q
+    rand_mat = torch.randn(B, 3, 3, device=device, dtype=dtype)
+    Q, R = torch.linalg.qr(rand_mat)  # Q: (B, 3, 3) orthogonal, R: (B, 3, 3) upper triangular
+
+    # Ensure proper rotation (det=+1): if det(Q) = -1, flip sign of first column
+    dets = torch.linalg.det(Q)  # (B,)
+    # dets is either +1 or -1 for orthogonal matrices
+    # Flip first column where det = -1
+    sign = dets.sign().unsqueeze(-1)  # (B, 1)
+    Q[:, :, 0] = Q[:, :, 0] * sign  # flip first column of each rotation matrix where det=-1
+
+    # Apply rotation: positions @ Q^T  (Q maps from frame to rotated frame)
+    # positions: (B, N, 3), Q: (B, 3, 3)
+    # Result: (B, N, 3) @ (B, 3, 3) -> bmm: (B, N, 3)
+    augmented = torch.bmm(positions, Q.transpose(1, 2))  # (B, N, 3)
+
+    # Step 2: CoM noise
+    # Default: 1/sqrt(n_real) per sample
+    if com_noise_std is None:
+        # Variable std per sample: (B, 1, 1)
+        noise_std = (1.0 / (n_real.clamp(min=1.0).sqrt())).unsqueeze(-1).unsqueeze(-1)
+    else:
+        noise_std = com_noise_std
+
+    noise = torch.randn(B, 1, 3, device=device, dtype=dtype) * noise_std  # (B, 1, 3)
+    augmented = augmented + noise  # broadcast: (B, N, 3)
+
+    # Step 3: Zero out padding
+    augmented = augmented * mask_3d
+
+    if squeeze_back:
+        augmented = augmented.squeeze(0)
+
+    return augmented
+
+
+def compute_global_std(
+    data_root: str,
+    molecules: Optional[List[str]] = None,
+    split: str = "train",
+) -> float:
+    """Compute global position std across all molecules and all real atoms.
+
+    Used for unit-variance normalization in hyp_003. Dividing all positions
+    by this value puts the model's input into a ~N(0, 1) scale per coordinate.
+
+    Expected value: ~1.3-1.4 Angstroms (typical MD17 coordinate spread).
+
+    Sanity checks:
+    - Only real atoms (mask=1) contribute. Padding zeros do NOT inflate or deflate std. CHECK.
+    - Std is a single scalar — same for all molecules, all splits. CHECK.
+    - If std < 0.5 or > 3.0, something is wrong — positions may not be canonical. CHECK.
+
+    Args:
+        data_root: path to the data directory (e.g., /path/to/tnafmol/data/)
+        molecules: list of molecule names; if None, uses all 8
+        split: which split to use for computing std (default "train")
+
+    Returns:
+        global_std: single float, ~1.3-1.4 Angstroms
+    """
+    if molecules is None:
+        molecules = list(MOLECULES.keys())
+
+    all_positions = []
+    for mol in molecules:
+        data_dir = os.path.join(data_root, f"md17_{mol}_v1")
+        dataset_path = os.path.join(data_dir, "dataset.npz")
+        if not os.path.exists(dataset_path):
+            print(f"Warning: dataset not found for {mol}, skipping for global_std")
+            continue
+        data = np.load(dataset_path)
+        idx = data[f"{split}_idx"]
+        positions = data["positions"][idx]  # (N_split, 21, 3)
+        mask = data["mask"]  # (21,)
+        n_atoms = int(mask.sum())
+        # Extract real atom positions: (N_split, n_atoms, 3)
+        real_pos = positions[:, :n_atoms, :]
+        all_positions.append(real_pos.reshape(-1))  # flatten all
+
+    if not all_positions:
+        raise RuntimeError("No datasets found for computing global_std")
+
+    all_pos = np.concatenate(all_positions)
+    std = float(np.std(all_pos))
+    print(f"Global std across all molecules ({split} split): {std:.4f} Angstroms")
+    return std
 
 
 # =============================================================================
@@ -717,27 +870,51 @@ class MD17Dataset(torch.utils.data.Dataset):
     Args:
         data_dir: Path to processed dataset directory (e.g., data/md17_aspirin_v1/)
         split: One of 'train', 'val', 'test'
+        augment: If True, apply random SO(3) rotation + CoM noise on each sample (hyp_003)
+        global_std: If provided, divide all positions by this scalar for unit-variance
+                    normalization (hyp_003). Applied AFTER canonical frame, BEFORE model.
     """
 
-    def __init__(self, data_dir: str, split: str = "train"):
+    def __init__(
+        self,
+        data_dir: str,
+        split: str = "train",
+        augment: bool = False,
+        global_std: Optional[float] = None,
+    ):
         assert split in ("train", "val", "test")
 
         data = np.load(os.path.join(data_dir, "dataset.npz"))
         idx = data[f"{split}_idx"]
 
-        self.positions = torch.from_numpy(data["positions"][idx])  # (N, 21, 3)
+        positions = data["positions"][idx]  # (N, 21, 3) float32
+
+        # Apply global std normalization if provided
+        # This puts positions in ~N(0, 1) scale per coordinate
+        if global_std is not None and global_std > 0:
+            positions = positions / global_std
+
+        self.positions = torch.from_numpy(positions)               # (N, 21, 3)
         self.energies = torch.from_numpy(data["energies"][idx])    # (N,)
         self.atom_types = torch.from_numpy(data["atom_types"])     # (21,) — shared
         self.atom_types_one_hot = torch.from_numpy(data["atom_types_one_hot"])  # (21, 4)
         self.mask = torch.from_numpy(data["mask"])                 # (21,)
         self.molecule = os.path.basename(data_dir)
+        self.augment = augment
+        self.global_std = global_std
 
     def __len__(self):
         return len(self.positions)
 
     def __getitem__(self, idx):
+        positions = self.positions[idx]  # (21, 3)
+
+        # Apply augmentation if enabled (training only)
+        if self.augment:
+            positions = augment_positions(positions, self.mask)
+
         return {
-            "positions": self.positions[idx],        # (21, 3)
+            "positions": positions,                  # (21, 3)
             "energy": self.energies[idx],            # scalar
             "atom_types": self.atom_types,           # (21,)
             "atom_types_one_hot": self.atom_types_one_hot,  # (21, 4)
@@ -749,9 +926,23 @@ class MultiMoleculeDataset(torch.utils.data.Dataset):
     """Combined dataset across all molecules for multi-molecule training.
 
     Each sample includes a molecule index for conditioning.
+
+    Args:
+        data_root: root data directory
+        split: 'train', 'val', or 'test'
+        molecules: list of molecule names; if None, uses all 8
+        augment: if True, apply random SO(3) + CoM noise (training only, hyp_003)
+        global_std: if provided, normalize positions by this scalar (hyp_003)
     """
 
-    def __init__(self, data_root: str, split: str = "train", molecules: Optional[List[str]] = None):
+    def __init__(
+        self,
+        data_root: str,
+        split: str = "train",
+        molecules: Optional[List[str]] = None,
+        augment: bool = False,
+        global_std: Optional[float] = None,
+    ):
         if molecules is None:
             molecules = list(MOLECULES.keys())
 
@@ -765,7 +956,7 @@ class MultiMoleculeDataset(torch.utils.data.Dataset):
             if not os.path.exists(os.path.join(data_dir, "dataset.npz")):
                 print(f"Warning: dataset not found for {mol} at {data_dir}, skipping")
                 continue
-            ds = MD17Dataset(data_dir, split)
+            ds = MD17Dataset(data_dir, split, augment=augment, global_std=global_std)
             self.datasets.append(ds)
             self.molecule_indices.extend([i] * len(ds))
             cumulative += len(ds)
