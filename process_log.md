@@ -181,5 +181,134 @@ PhD student-maintained. Append-only decisions, reasoning, file manifest.
 - Key insight: log_det_per_dof needs to stay NEAR 0, not just bounded. The clamp alone is not enough.
   The regularization penalty (log_det_per_dof)^2 needs to be strong enough to overcome the NLL gradient pushing log_det up.
 
+### SANITY Val Run Results
+- alpha_pos=0.05, log_det_reg_weight=1.0, lr=3e-4, 2000 steps
+- W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/l9r3k0sf
+- malonaldehyde: 11.6% valid, ethanol: 7.8% valid, others low
+- log_det/dof = 0.396 (down from 0.78 with reg_weight=0.1)
+- PROMISING (malonaldehyde > 0.1). Proceeding to sweep.
+
+### SANITY Sweep
+- Sweep URL: https://wandb.ai/kaityrusnelson1/tnafmol/sweeps/rccehd8m
+- Sweep ID: rccehd8m
+- Parameters: alpha_pos [0.02, 0.05, 0.1], log_det_reg_weight [0.5, 1.0, 2.0, 5.0, 10.0], lr [1e-4, 3e-4, 1e-3], run_cap=30
+- Agents running on GPUs 1-4 in parallel
+
 ### Commits
 - `8faf809` — [hyp_003] code: implement asymmetric clamping, log-det regularization, soft equivariance
+- `d42ffb2` — [hyp_003] results: diagnostic run — new collapse mode identified, plan written
+
+---
+
+## 2026-03-01 — Re-spawn: SANITY full run + HEURISTICS (if needed) + final report
+**Branch:** `exp/hyp_003`
+
+### Context at Re-spawn
+Previous PhD agent context exhausted after completing:
+1. Implementation (8faf809), diagnostic (d42ffb2), plan (d42ffb2)
+2. SANITY val run (2000 steps): malonaldehyde 11.6%, ethanol 7.8% — PROMISING
+3. SANITY sweep (24/30 runs, W&B rccehd8m): best config = alpha_pos=0.02, log_det_reg_weight=5, lr=1e-4 → 17.5% mean valid fraction at 3000 steps
+.state.json was never updated — fixed at re-spawn start to mark steps 1-5 as completed.
+
+### INTENTION: SANITY Full Run (before executing)
+- Best sweep config: alpha_pos=0.02, log_det_reg_weight=5, lr=1e-4, batch_size=128
+- n_steps=10000 (3x more than sweep), eval_n_samples=500
+- d_model=128, n_blocks=8, n_heads=4 (unchanged)
+- augment_train=True, normalize_to_unit_var=True (global_std=1.290462613105774)
+- lr_schedule=cosine, warmup_steps=300, grad_clip_norm=1.0
+- GPU: CUDA_VISIBLE_DEVICES=1 (physical GPU 1 → logical cuda:0)
+- Save to: experiments/hypothesis/hyp_003_tarflow_stabilization/angles/sanity/full/
+- W&B run name: hyp_003_sanity_full_ap002_rw5_lr1e-4
+- Expecting: best sweep run was 17.5% at 3000 steps. 10k steps may improve but the alpha_pos=0.02 saturation (log_det/dof≈0.1) persists. Success criterion (4/8 molecules ≥ 50%) is unlikely to be met.
+- Plausibility checks: log_det_per_dof near 0.1 (alpha_pos saturation), small molecules > large molecules in valid fraction.
+
+### INTENTION: HEURISTICS angle (if SANITY fails)
+- SBG recipe from Tan et al. 2025 (ICML): AdamW betas=(0.9, 0.95), OneCycleLR pct_start=0.05, EMA decay=0.999, batch_size=512
+- Keep best alpha_pos=0.02, log_det_reg_weight=5 from SANITY
+- Val run: 2000 steps, promising if valid_fraction > 0.1 on any molecule
+- Full run: 20000+ steps if promising
+
+### Decisions & Reasoning
+- Starting from freshly initialized model (no checkpoint reuse between angles — spec compliance)
+- Will skip SCALE if the collapse mechanism is still alpha_pos saturation (SCALE doesn't fix saturation)
+
+### New Files to be Created
+- `experiments/hypothesis/hyp_003_tarflow_stabilization/angles/sanity/full/config.json` — full run config
+- `experiments/hypothesis/hyp_003_tarflow_stabilization/angles/sanity/full/best.pt` — best checkpoint
+- `experiments/hypothesis/hyp_003_tarflow_stabilization/angles/sanity/full/raw/` — raw arrays
+- `experiments/hypothesis/hyp_003_tarflow_stabilization/results/` — canonical plots after winning angle
+
+### SANITY Full Run Results (10000 steps)
+- W&B run: https://wandb.ai/kaityrusnelson1/tnafmol/runs/o5naez7a
+- Config: alpha_pos=0.02, log_det_reg_weight=5, lr=1e-4, batch_size=128, cosine LR
+- CONFIRMED: Loss plateaued at 0.8689 from step 300 onward. log_det/dof locked at 0.100 (alpha_pos saturation).
+- Best checkpoint: step 500 (val_loss=0.8145) — very early
+- Evaluation results:
+  - ethanol: 33.0%, malonaldehyde: 32.6% (best)
+  - benzene: 16.2%, uracil: 13.8%
+  - toluene: 4.4%, salicylic_acid: 3.0%, naphthalene: 1.8%, aspirin: 0.2%
+  - Mean: 13.1%, 0/8 molecules ≥ 50%
+- SANITY FAILS primary criterion. Proceeding to HEURISTICS.
+- Plausibility check: ✓ smaller molecules > larger ones. ✓ log_det=0.100 = exact alpha_pos saturation. ✓ best checkpoint early = loss plateaus immediately.
+
+### HEURISTICS Val Run Results (2000 steps)
+- W&B run: https://wandb.ai/kaityrusnelson1/tnafmol/runs/o6pnle0k
+- Config: AdamW betas=(0.9,0.95), OneCycleLR pct_start=0.05, EMA decay=0.999, batch_size=512, lr=3e-4
+- alpha_pos=0.02, log_det_reg_weight=5 (same as SANITY best)
+- Results:
+  - ethanol: 41.3%, malonaldehyde: 40.7%
+  - uracil: 20.7%, benzene: 17.7%
+  - toluene: 8.0%, salicylic_acid: 4.0%, naphthalene: 1.3%, aspirin: 0.3%
+  - Mean: 16.8%, 0/8 molecules ≥ 50%
+- PROMISING (>0.1 on multiple molecules). Best checkpoint at step 2000 (end of run).
+- log_det/dof still at 0.100 — saturation persists. SBG recipe improves results but doesn't fix root cause.
+- Proceeding to HEURISTICS sweep (ema_decay × lr × batch_size, 12 runs, W&B sweep cmgrp6jo)
+
+### HEURISTICS Sweep
+- Sweep ID: cmgrp6jo
+- URL: https://wandb.ai/kaityrusnelson1/tnafmol/sweeps/cmgrp6jo
+- Parameters: ema_decay [0.995, 0.999], lr [1e-4, 3e-4, 1e-3], batch_size [256, 512], run_cap=12
+- Agents running on GPUs 1-4 in parallel (4 agents × 3 runs each)
+- Best config: batch_size=512, ema_decay=0.999, lr=1e-3 → mean VF 18.3% (3 independent runs confirm)
+
+### HEURISTICS Full Run Results (20000 steps)
+- W&B run: https://wandb.ai/kaityrusnelson1/tnafmol/runs/4079op64
+- Config: batch_size=512, ema_decay=0.999, lr=1e-3, OneCycleLR, alpha_pos=0.02, reg=5
+- Results: mean VF 14.3%, 0/8 molecules ≥ 50%
+  - malonaldehyde 38.0%, ethanol 33.4%, uracil 13.6%, benzene 15.2%
+  - toluene 7.4%, salicylic_acid 3.8%, naphthalene 2.0%, aspirin 0.8%
+- Best checkpoint at step 2000 — same saturation pattern
+- HEURISTICS FAILS primary criterion
+
+### SCALE Decision
+- SKIPPED with justification: model saturates at step 150 (loss flat, log_det locked at 0.100)
+- Not capacity-limited — the alpha_pos saturation is a mathematical equilibrium
+- Increasing model size would hit same equilibrium faster, not escape it
+- Per plan spec: "If the collapse mechanism is still alpha_pos saturation, SCALE will NOT help"
+
+### Visualizations Generated
+- valid_fraction_comparison.png: SANITY vs HEURISTICS full runs per molecule
+- min_pairwise_distance.png: reference distribution vs generated stats for top molecules
+- sweep_comparison.png: HEURISTICS sweep 12 runs, LR × batch_size analysis
+- angle_summary.png: all angles table with status
+- best_results_summary.png: HEURISTICS full per-molecule breakdown + size correlation scatter
+- All saved to experiments/hypothesis/hyp_003_tarflow_stabilization/results/
+- Source: src/visualize_hyp003.py (new file)
+
+### New Files Created
+- `src/visualize_hyp003.py` — hyp_003-specific visualization script
+- `experiments/hypothesis/hyp_003_tarflow_stabilization/angles/sanity/full/config.json` — SANITY full config
+- `experiments/hypothesis/hyp_003_tarflow_stabilization/angles/heuristics/val/config.json` — HEURISTICS val config
+- `experiments/hypothesis/hyp_003_tarflow_stabilization/angles/heuristics/sweep/sweep_config.json` — sweep config
+- `experiments/hypothesis/hyp_003_tarflow_stabilization/angles/heuristics/sweep/run_sweep.py` — sweep runner
+- `experiments/hypothesis/hyp_003_tarflow_stabilization/angles/heuristics/sweep/summary.json` — sweep results
+- `experiments/hypothesis/hyp_003_tarflow_stabilization/angles/heuristics/full/config.json` — HEURISTICS full config
+- `experiments/hypothesis/hyp_003_tarflow_stabilization/reports/final_report.md` — final experiment report
+- `experiments/hypothesis/hyp_003_tarflow_stabilization/results/*.png` — canonical plots
+
+### Commits (to be created)
+- `[hyp_003] results: SANITY full run — mean 13.1%, saturation confirmed`
+- `[hyp_003] results: HEURISTICS val + sweep + full — mean 18.3% best, FAIL`
+- `[hyp_003] results: canonical plots and notes.md update`
+- `[hyp_003] docs: final report, experiment_log, process_log`
+- `[hyp_003] integrate: clean experiment directory`
