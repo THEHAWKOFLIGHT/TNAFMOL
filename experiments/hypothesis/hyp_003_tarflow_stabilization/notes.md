@@ -17,9 +17,32 @@ OPTIMIZE: SANITY (all three fixes combined) → HEURISTICS (SBG training recipe)
 See reports/diagnostic_report.md, reports/plan_report.md for detailed angle specifications.
 
 ### Results
-*(populated after experiment completes)*
+**FAILURE** — Primary criterion (valid_fraction ≥ 0.5 on ≥ 4/8 molecules) not met.
+
+Best result: HEURISTICS sweep at 3000 steps → mean valid fraction 18.3%, 0/8 molecules ≥ 50%.
+
+SANITY full (10k steps): mean 13.1% — ethanol 33.0%, malonaldehyde 32.6%, others < 20%
+HEURISTICS full (20k steps): mean 14.3% — malonaldehyde 38.0%, ethanol 33.4%, others < 20%
+
+Root cause: alpha_pos saturation equilibrium. The NLL gradient (pushing log_det up) and the regularization gradient (pushing toward 0) reach a stable fixed point at exactly log_det/dof = alpha_pos (= 0.02). This produces a ~38% compression of generated samples relative to reference, causing close-collision failures. More training steps, higher LR, EMA — none break the equilibrium. SCALE skipped (not capacity-limited — model saturates at step 150).
+
+See results/: valid_fraction_comparison.png, best_results_summary.png, sweep_comparison.png, angle_summary.png
+
+See reports/final_report.md for full analysis.
+
+W&B runs: SANITY sweep rccehd8m | SANITY full o5naez7a | HEURISTICS val o6pnle0k | HEURISTICS sweep cmgrp6jo | HEURISTICS full 4079op64
+
+![Valid Fraction Comparison](../results/valid_fraction_comparison.png)
+**Valid fraction by molecule — SANITY vs HEURISTICS full runs** — Neither angle reaches the 50% threshold. Small molecules (9 atoms) perform best (~33-38%). Large molecules (18-21 atoms) are near 0%.
+
+![Best Results Summary](../results/best_results_summary.png)
+**Best results summary** — Left: per-molecule valid fraction showing size-dependent scaling failure. Right: clear inverse correlation between n_atoms and valid fraction.
 
 ### Interpretation
-*(populated after experiment completes)*
+The interventions partially worked: log_det is now bounded (hyp_002 had log_det/dof → 50+, hyp_003 has it at 0.02). However, partial suppression is insufficient — the regularization creates a new stable equilibrium at log_det/dof = alpha_pos rather than at 0. The equilibrium is a mathematical fixed point between the NLL gradient (wants expansion) and the regularization gradient (penalizes deviation from 0). No reasonable hyperparameter tuning escapes it.
 
-**Status:** [ ] Fits | [ ] Conflict — escalate to Postdoc | [ ] Inconclusive — reason:
+This result falsifies the hypothesis. TarFlow with asymmetric clamping + log-det regularization cannot generate valid molecular conformations under standard MLE training. The fundamental issue is the interaction between the affine scale DOFs and the MLE objective in high-dimensional molecular systems.
+
+**Research implication:** TarFlow is likely not viable for molecular conformation generation. The next experiment should either abandon TarFlow entirely or test a fundamentally different loss formulation (e.g., asymmetric regularization targeting only positive log_det).
+
+**Status:** [x] Conflict — escalate to Postdoc | Explanation: Two consecutive TarFlow failures. Research story expects further investigation or pivot to DDPM.
