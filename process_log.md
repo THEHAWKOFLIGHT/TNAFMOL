@@ -143,3 +143,43 @@ PhD student-maintained. Append-only decisions, reasoning, file manifest.
 
 ### Commits
 - `caa321f` — [hyp_002] results: HEURISTICS val run complete — ActNorm collapse diagnosis and final experiment results
+
+---
+
+## 2026-03-01 — hyp_003: TarFlow Stabilization
+**Branch:** `exp/hyp_003`
+
+### Decisions & Reasoning (INTENTION — write before execute)
+- Implementing three targeted interventions from literature to fix log_det collapse:
+  1. Asymmetric soft scale clamping (Andrade et al. 2024): _asymmetric_clamp with alpha_pos=0.1, alpha_neg=2.0
+  2. Log-det regularization: log_det_reg_weight * (log_det_per_dof)^2 penalty term
+  3. Soft equivariance: random SO(3) rotation + CoM noise augmentation + global std normalization
+  Source: SBG training recipe (Tan et al. 2025 ICML)
+- Environment note: escher.lbl.gov, Slurm unavailable, using direct CUDA. Physical GPU 1 = CUDA_VISIBLE_DEVICES=1 -> logical cuda:0.
+- Global std computed from all 8 molecules train split = 1.2905 Angstroms. Plausible (expected 1.3-1.4 Å).
+
+### New Files Created
+- `src/model.py` — updated: _asymmetric_clamp function, TarFlowBlock updated (alpha_pos/alpha_neg replacing log_scale_max), TarFlow.nll_loss updated (log_det_reg_weight), EMAModel class added
+- `src/data.py` — updated: augment_positions(), compute_global_std(), MD17Dataset/MultiMoleculeDataset with augment+global_std
+- `src/train.py` — updated: DEFAULT_CONFIG for hyp_003, global_std computation, augmentation passthrough, log_det_reg_weight in training loop, OneCycleLR option, EMA support, evaluate_molecule denormalization
+- `experiments/hypothesis/hyp_003_tarflow_stabilization/notes.md` — experiment notes
+- `experiments/hypothesis/hyp_003_tarflow_stabilization/config/diag_config.json` — diagnostic config
+
+### DIAGNOSTIC RUN RESULTS (500 steps)
+- log_det/dof stable at 0.78 — within [-2, 2] range. Asymmetric clamp IS working.
+- Loss decreases: 1.39 -> 0.14. Real learning is happening.
+- BUT valid_fraction = 0.000 on all 8 molecules. min_dist_mean = 0.2-0.35 Å (should be >0.8 Å)
+- ROOT CAUSE (new collapse mode): model exploits alpha_pos=0.1 by setting log_scale ≈ +0.1 uniformly across all 8 blocks. This gives log_det/dof = 8 * 0.0977 = 0.78 (the saturation value). In INVERSE (sampling) direction, noise is contracted by exp(-0.78 * per_dof * 3) per atom. Sample std = 0.54 Å normalized = 0.70 Å real (vs 0.92 Å reference). Atoms are too close.
+- The model IS learning structure (NLL improves significantly) but samples are compressed by forward expansion.
+- CONCLUSION: log_det_reg_weight=0.1 is insufficient. Need stronger regularization OR reduce alpha_pos further.
+
+### Decisions for SANITY angle
+- INTENTION: Increase log_det_reg_weight to force model toward log_det_per_dof ≈ 0
+  Strong regularization candidates: reg_weight = 1.0, 5.0, 10.0
+- Alternative: reduce alpha_pos to 0.02-0.05 (tighter expansion bound)
+- Combined approach: alpha_pos=0.05 + reg_weight=1.0
+- Key insight: log_det_per_dof needs to stay NEAR 0, not just bounded. The clamp alone is not enough.
+  The regularization penalty (log_det_per_dof)^2 needs to be strong enough to overcome the NLL gradient pushing log_det up.
+
+### Commits
+- `8faf809` — [hyp_003] code: implement asymmetric clamping, log-det regularization, soft equivariance
