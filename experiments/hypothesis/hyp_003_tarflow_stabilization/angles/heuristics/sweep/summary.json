@@ -1,0 +1,94 @@
+{
+  "sweep_id": "cmgrp6jo",
+  "sweep_url": "https://wandb.ai/kaityrusnelson1/tnafmol/sweeps/cmgrp6jo",
+  "n_runs": 12,
+  "best_config": {
+    "batch_size": 512,
+    "ema_decay": 0.999,
+    "lr": 0.001,
+    "lr_schedule": "onecycle",
+    "alpha_pos": 0.02,
+    "log_det_reg_weight": 5
+  },
+  "best_mean_valid_fraction": 0.183,
+  "best_run_ids": [
+    "93fr7qkd",
+    "nlvuw5k5",
+    "ezevt2pk"
+  ],
+  "all_results": {
+    "mcapbagr": {
+      "batch_size": 256,
+      "ema_decay": 0.999,
+      "lr": 0.001,
+      "mean_vf": 0.175
+    },
+    "93fr7qkd": {
+      "batch_size": 512,
+      "ema_decay": 0.999,
+      "lr": 0.001,
+      "mean_vf": 0.183
+    },
+    "49f1vcqh": {
+      "batch_size": 256,
+      "ema_decay": 0.995,
+      "lr": 0.0003,
+      "mean_vf": 0.127
+    },
+    "sw_agent2_1": {
+      "batch_size": null,
+      "ema_decay": null,
+      "lr": null,
+      "mean_vf": 0.127
+    },
+    "sw_agent2_2": {
+      "batch_size": null,
+      "ema_decay": null,
+      "lr": null,
+      "mean_vf": 0.125
+    },
+    "sw_agent2_3": {
+      "batch_size": null,
+      "ema_decay": null,
+      "lr": null,
+      "mean_vf": 0.126
+    },
+    "nlvuw5k5": {
+      "batch_size": 512,
+      "ema_decay": 0.999,
+      "lr": 0.001,
+      "mean_vf": 0.183
+    },
+    "w3u9ay5r": {
+      "batch_size": 512,
+      "ema_decay": 0.999,
+      "lr": 0.0003,
+      "mean_vf": 0.115
+    },
+    "nsfvbt2p": {
+      "batch_size": 512,
+      "ema_decay": 0.995,
+      "lr": 0.0001,
+      "mean_vf": 0.12
+    },
+    "eoppbvgn": {
+      "batch_size": 256,
+      "ema_decay": 0.999,
+      "lr": 0.001,
+      "mean_vf": 0.175
+    },
+    "ezevt2pk": {
+      "batch_size": 512,
+      "ema_decay": 0.999,
+      "lr": 0.001,
+      "mean_vf": 0.183
+    },
+    "o1ika5b5": {
+      "batch_size": 256,
+      "ema_decay": 0.999,
+      "lr": 0.0001,
+      "mean_vf": 0.122
+    }
+  },
+  "finding": "Best config is batch_size=512, ema_decay=0.999, lr=1e-3 with OneCycleLR. Multiple independent runs confirm this. Higher lr is better, suggesting the model needs more aggressive learning to escape the saturation basin."
+}
