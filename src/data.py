@@ -10,6 +10,7 @@ Handles:
 - Data loading utilities for downstream models
 - Soft equivariance augmentation: SO(3) rotation + CoM noise (hyp_003)
 - Global std normalization across all molecules (hyp_003)
+- Permutation augmentation: random atom ordering per sample (hyp_004)
 
 Conventions:
 - Coordinates: Angstroms, CoM-centered, principal-axis-aligned
@@ -23,6 +24,13 @@ hyp_003 additions:
 - MD17Dataset now accepts augment: bool and global_std: Optional[float]
 - If global_std is provided, positions are divided by global_std in __init__
   (normalization happens AFTER canonical frame, BEFORE model input)
+
+hyp_004 additions:
+- permute_atoms(): randomly permute real atom ordering within each sample
+- MD17Dataset now accepts permute: bool (default False)
+- Permutation is applied per-sample in __getitem__, after global_std normalization
+  but before SO(3) augmentation. Order: load → permute → augment.
+  Note: global_std is a scalar that commutes with permutation, so the order is correct.
 """
 
 import os
@@ -179,6 +187,52 @@ def compute_global_std(
     std = float(np.std(all_pos))
     print(f"Global std across all molecules ({split} split): {std:.4f} Angstroms")
     return std
+
+
+# =============================================================================
+# Permutation augmentation (hyp_004)
+# =============================================================================
+
+def permute_atoms(
+    positions: torch.Tensor,
+    atom_types: torch.Tensor,
+    mask: torch.Tensor,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Randomly permute real atom ordering. Padding stays at end.
+
+    This augmentation respects the permutation symmetry of atoms: the physical
+    state of a molecule does not depend on the arbitrary ordering of atoms in
+    the data representation. By presenting random orderings during training,
+    the model cannot overfit to the specific atom ordering in the dataset.
+
+    Sanity checks:
+    - n_real <= 1: no permutation possible, return unchanged. CHECK.
+    - Padding atoms (mask=0) stay at end, untouched. CHECK.
+    - Permutation is applied to both positions AND atom_types consistently. CHECK.
+    - mask is unchanged (same number of real/padding atoms). CHECK.
+
+    Args:
+        positions: (N, 3) single sample positions
+        atom_types: (N,) int atom type indices
+        mask: (N,) float — 1=real, 0=padding
+
+    Returns:
+        permuted positions, atom_types, mask (same shapes, mask unchanged)
+    """
+    n_real = int(mask.sum().item())
+    if n_real <= 1:
+        return positions, atom_types, mask
+
+    perm = torch.randperm(n_real, device=positions.device)
+
+    # Clone to avoid in-place mutation of the original tensors
+    positions_out = positions.clone()
+    atom_types_out = atom_types.clone()
+
+    positions_out[:n_real] = positions[perm]
+    atom_types_out[:n_real] = atom_types[perm]
+
+    return positions_out, atom_types_out, mask
 
 
 # =============================================================================
@@ -873,6 +927,9 @@ class MD17Dataset(torch.utils.data.Dataset):
         augment: If True, apply random SO(3) rotation + CoM noise on each sample (hyp_003)
         global_std: If provided, divide all positions by this scalar for unit-variance
                     normalization (hyp_003). Applied AFTER canonical frame, BEFORE model.
+        permute: If True, randomly permute real atom ordering per sample (hyp_004).
+                 Applied BEFORE augmentation. Must clone atom_types since they are
+                 shared per-molecule (line 899 in original data.py).
     """
 
     def __init__(
@@ -881,6 +938,7 @@ class MD17Dataset(torch.utils.data.Dataset):
         split: str = "train",
         augment: bool = False,
         global_std: Optional[float] = None,
+        permute: bool = False,
     ):
         assert split in ("train", "val", "test")
 
@@ -902,6 +960,7 @@ class MD17Dataset(torch.utils.data.Dataset):
         self.molecule = os.path.basename(data_dir)
         self.augment = augment
         self.global_std = global_std
+        self.permute = permute
 
     def __len__(self):
         return len(self.positions)
@@ -909,15 +968,25 @@ class MD17Dataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         positions = self.positions[idx]  # (21, 3)
 
-        # Apply augmentation if enabled (training only)
+        # Clone atom_types for this sample (shared per-molecule tensor;
+        # must clone before permutation to avoid corrupting other samples)
+        atom_types = self.atom_types.clone()  # (21,)
+
+        # Apply permutation augmentation (hyp_004) — before SO(3) augmentation
+        # Note: global_std normalization is a scalar applied in __init__,
+        # which commutes with permutation. Order is correct.
+        if self.permute:
+            positions, atom_types, _ = permute_atoms(positions, atom_types, self.mask)
+
+        # Apply SO(3) + CoM noise augmentation if enabled (training only)
         if self.augment:
             positions = augment_positions(positions, self.mask)
 
         return {
             "positions": positions,                  # (21, 3)
             "energy": self.energies[idx],            # scalar
-            "atom_types": self.atom_types,           # (21,)
-            "atom_types_one_hot": self.atom_types_one_hot,  # (21, 4)
+            "atom_types": atom_types,                # (21,) — may be permuted
+            "atom_types_one_hot": self.atom_types_one_hot,  # (21, 4) — NOT permuted (not used by model)
             "mask": self.mask,                       # (21,)
         }
 
@@ -933,6 +1002,7 @@ class MultiMoleculeDataset(torch.utils.data.Dataset):
         molecules: list of molecule names; if None, uses all 8
         augment: if True, apply random SO(3) + CoM noise (training only, hyp_003)
         global_std: if provided, normalize positions by this scalar (hyp_003)
+        permute: if True, randomly permute atom ordering per sample (hyp_004)
     """
 
     def __init__(
@@ -942,6 +1012,7 @@ class MultiMoleculeDataset(torch.utils.data.Dataset):
         molecules: Optional[List[str]] = None,
         augment: bool = False,
         global_std: Optional[float] = None,
+        permute: bool = False,
     ):
         if molecules is None:
             molecules = list(MOLECULES.keys())
@@ -956,7 +1027,7 @@ class MultiMoleculeDataset(torch.utils.data.Dataset):
             if not os.path.exists(os.path.join(data_dir, "dataset.npz")):
                 print(f"Warning: dataset not found for {mol} at {data_dir}, skipping")
                 continue
-            ds = MD17Dataset(data_dir, split, augment=augment, global_std=global_std)
+            ds = MD17Dataset(data_dir, split, augment=augment, global_std=global_std, permute=permute)
             self.datasets.append(ds)
             self.molecule_indices.extend([i] * len(ds))
             cumulative += len(ds)

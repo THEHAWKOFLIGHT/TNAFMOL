@@ -46,7 +46,7 @@ sys.path.insert(0, project_root)
 
 from src.data import MD17Dataset, MultiMoleculeDataset, MOLECULES, MAX_ATOMS, compute_global_std
 from src.metrics import valid_fraction, energy_wasserstein, pairwise_distance_divergence, min_pairwise_distance
-from src.model import TarFlow, EMAModel
+from src.model import TarFlow, EMAModel, BidirectionalTypeEncoder
 
 
 # =============================================================================
@@ -55,14 +55,14 @@ from src.model import TarFlow, EMAModel
 
 DEFAULT_CONFIG = {
     # Identity
-    "exp_id": "hyp_003",
+    "exp_id": "hyp_004",
     "angle": "sanity",
     "stage": "diag",
     "command": "OPTIMIZE",
 
     # Reproducibility
     "seed": 42,
-    "device": "cuda:0",  # NOTE: use CUDA_VISIBLE_DEVICES=1 externally; this is logical cuda:0
+    "device": "cuda:0",
 
     # Model
     "n_blocks": 8,
@@ -71,21 +71,26 @@ DEFAULT_CONFIG = {
     "ffn_mult": 4,
     "atom_type_emb_dim": 16,
     "dropout": 0.1,
-    "alpha_pos": 0.1,        # asymmetric clamp: expansion bound per layer (Andrade et al. 2024)
+    "alpha_pos": 0.02,       # asymmetric clamp: expansion bound per layer (hyp_003 best)
     "alpha_neg": 2.0,        # asymmetric clamp: contraction bound per layer
     "shift_only": False,     # use full affine flow (not shift-only)
     "use_actnorm": False,    # no ActNorm (collapsed in hyp_002)
 
+    # hyp_004 architectural flags (all default False for backward compatibility)
+    "use_bidir_types": False,    # bidirectional type conditioning
+    "use_pos_enc": False,        # learned positional encodings per block
+    "use_perm_aug": False,       # permutation augmentation on atoms
+
     # Training
     "n_steps": 500,          # default: diagnostic run
     "batch_size": 128,
-    "lr": 3e-4,
+    "lr": 1e-4,
     "lr_schedule": "cosine", # "cosine" or "onecycle"
     "warmup_steps": 500,
     "grad_clip_norm": 1.0,
     "val_interval": 200,
     "eval_n_samples": 500,
-    "log_det_reg_weight": 0.1,  # penalty weight for log_det exploitation (hyp_003)
+    "log_det_reg_weight": 5.0,  # penalty weight (hyp_003 best)
     "betas": [0.9, 0.999],   # AdamW betas (can be changed for HEURISTICS)
     "weight_decay": 1e-5,    # AdamW weight decay
 
@@ -93,7 +98,7 @@ DEFAULT_CONFIG = {
     "use_ema": False,
     "ema_decay": 0.999,
 
-    # Data augmentation and normalization (hyp_003)
+    # Data augmentation and normalization
     "augment_train": True,              # random SO(3) + CoM noise on train
     "normalize_to_unit_var": True,      # divide by global std
 
@@ -103,12 +108,12 @@ DEFAULT_CONFIG = {
 
     # W&B
     "wandb_project": "tnafmol",
-    "wandb_group": "hyp_003",
-    "wandb_tags": ["hypothesis", "hyp_003", "OPTIMIZE"],
-    "wandb_notes": "hyp_003 diagnostic: all three fixes enabled. Checking log_det stabilization.",
+    "wandb_group": "hyp_004",
+    "wandb_tags": ["hypothesis", "hyp_004", "OPTIMIZE"],
+    "wandb_notes": "",
 
     # Output
-    "output_dir": "experiments/hypothesis/hyp_003_tarflow_stabilization",
+    "output_dir": "experiments/hypothesis/hyp_004_tarflow_arch_ablation",
 }
 
 
@@ -265,7 +270,8 @@ def train(cfg: dict):
     # W&B: if a run is already active (called from sweep agent), reuse it
     # Otherwise, init a new run.
     if wandb.run is None:
-        run_name = f"hyp_003_{cfg['angle']}_{cfg['stage']}"
+        exp_id = cfg.get("exp_id", "hyp_004")
+        run_name = f"{exp_id}_{cfg['angle']}_{cfg['stage']}"
         if cfg.get("run_name_suffix"):
             run_name = run_name + "_" + cfg["run_name_suffix"]
 
@@ -294,7 +300,7 @@ def train(cfg: dict):
     # Log test metric to confirm logging
     wandb.log({"init_check": 1.0}, step=0)
 
-    # Model
+    # Model — includes hyp_004 architectural flags
     model = TarFlow(
         n_blocks=cfg["n_blocks"],
         d_model=cfg["d_model"],
@@ -303,10 +309,12 @@ def train(cfg: dict):
         atom_type_emb_dim=cfg["atom_type_emb_dim"],
         dropout=cfg["dropout"],
         max_atoms=MAX_ATOMS,
-        alpha_pos=cfg.get("alpha_pos", 0.1),
+        alpha_pos=cfg.get("alpha_pos", 0.02),
         alpha_neg=cfg.get("alpha_neg", 2.0),
         shift_only=cfg.get("shift_only", False),
         use_actnorm=cfg.get("use_actnorm", False),
+        use_bidir_types=cfg.get("use_bidir_types", False),
+        use_pos_enc=cfg.get("use_pos_enc", False),
     ).to(device)
 
     n_params = model.count_parameters()
@@ -319,19 +327,22 @@ def train(cfg: dict):
         ema = EMAModel(model, decay=cfg.get("ema_decay", 0.999))
         print(f"EMA enabled with decay={cfg.get('ema_decay', 0.999)}")
 
-    # Dataset — with augmentation and normalization
+    # Dataset — with augmentation, normalization, and optional permutation
     augment_train = cfg.get("augment_train", False)
+    use_perm_aug = cfg.get("use_perm_aug", False)
     train_ds = MultiMoleculeDataset(
         data_root, split="train", molecules=molecules,
-        augment=augment_train, global_std=global_std
+        augment=augment_train, global_std=global_std,
+        permute=use_perm_aug,
     )
     val_ds = MultiMoleculeDataset(
         data_root, split="val", molecules=molecules,
-        augment=False, global_std=global_std  # no augmentation for validation
+        augment=False, global_std=global_std,
+        permute=False,  # no permutation for validation
     )
 
     print(f"Train size: {len(train_ds):,}, Val size: {len(val_ds):,}")
-    print(f"Augment train: {augment_train}, Global std: {global_std}")
+    print(f"Augment train: {augment_train}, Permute: {use_perm_aug}, Global std: {global_std}")
 
     train_loader = DataLoader(
         train_ds,
@@ -587,7 +598,7 @@ def train(cfg: dict):
     })
 
     # Log artifacts
-    exp_id = cfg.get("exp_id", "hyp_003")
+    exp_id = cfg.get("exp_id", "hyp_004")
     angle = cfg.get("angle", "sanity")
     stage = cfg.get("stage", "diag")
     ckpt_artifact = wandb.Artifact(f"{exp_id}_{angle}_{stage}_model", type="model")
