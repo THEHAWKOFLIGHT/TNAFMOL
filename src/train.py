@@ -5,11 +5,21 @@ Usage:
     python3.10 src/train.py --config config.json [--device cuda:0]
 
 The script:
-1. Loads the multi-molecule dataset
-2. Trains TarFlow with NLL loss
+1. Loads the multi-molecule dataset (with optional augmentation + normalization)
+2. Trains TarFlow with NLL loss + optional log-det regularization
 3. Logs to W&B (project: tnafmol)
 4. Evaluates per-molecule metrics at the end
 5. Saves checkpoint and all output arrays
+
+hyp_003 changes:
+- compute_global_std() called to normalize positions to unit variance
+- augment=True for train dataset, augment=False for val/test
+- alpha_pos/alpha_neg instead of log_scale_max for asymmetric clamping
+- log_det_reg_weight parameter passed to nll_loss
+- OneCycleLR schedule option
+- AdamW betas config option
+- EMA model support (for HEURISTICS angle)
+- evaluate_molecule() accepts global_std for denormalization
 """
 
 import argparse
@@ -34,9 +44,9 @@ import wandb
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-from src.data import MD17Dataset, MultiMoleculeDataset, MOLECULES, MAX_ATOMS
+from src.data import MD17Dataset, MultiMoleculeDataset, MOLECULES, MAX_ATOMS, compute_global_std
 from src.metrics import valid_fraction, energy_wasserstein, pairwise_distance_divergence, min_pairwise_distance
-from src.model import TarFlow
+from src.model import TarFlow, EMAModel
 
 
 # =============================================================================
@@ -45,14 +55,14 @@ from src.model import TarFlow
 
 DEFAULT_CONFIG = {
     # Identity
-    "exp_id": "hyp_002",
-    "angle": "diagnostic",
+    "exp_id": "hyp_003",
+    "angle": "sanity",
     "stage": "diag",
     "command": "OPTIMIZE",
 
     # Reproducibility
     "seed": 42,
-    "device": "cuda:8",
+    "device": "cuda:0",  # NOTE: use CUDA_VISIBLE_DEVICES=1 externally; this is logical cuda:0
 
     # Model
     "n_blocks": 8,
@@ -61,19 +71,31 @@ DEFAULT_CONFIG = {
     "ffn_mult": 4,
     "atom_type_emb_dim": 16,
     "dropout": 0.1,
-    "log_scale_max": 0.5,  # limits |log_scale| per block to tanh*log_scale_max
-    "shift_only": True,   # if True: shift-only flow (no scale), prevents collapse
-    "use_actnorm": False,  # if True: add ActNorm after each block (prevents cumulative scale drift)
+    "alpha_pos": 0.1,        # asymmetric clamp: expansion bound per layer (Andrade et al. 2024)
+    "alpha_neg": 2.0,        # asymmetric clamp: contraction bound per layer
+    "shift_only": False,     # use full affine flow (not shift-only)
+    "use_actnorm": False,    # no ActNorm (collapsed in hyp_002)
 
     # Training
-    "n_steps": 5000,
+    "n_steps": 500,          # default: diagnostic run
     "batch_size": 128,
     "lr": 3e-4,
-    "lr_schedule": "cosine",
+    "lr_schedule": "cosine", # "cosine" or "onecycle"
     "warmup_steps": 500,
     "grad_clip_norm": 1.0,
     "val_interval": 200,
     "eval_n_samples": 500,
+    "log_det_reg_weight": 0.1,  # penalty weight for log_det exploitation (hyp_003)
+    "betas": [0.9, 0.999],   # AdamW betas (can be changed for HEURISTICS)
+    "weight_decay": 1e-5,    # AdamW weight decay
+
+    # EMA (for HEURISTICS angle)
+    "use_ema": False,
+    "ema_decay": 0.999,
+
+    # Data augmentation and normalization (hyp_003)
+    "augment_train": True,              # random SO(3) + CoM noise on train
+    "normalize_to_unit_var": True,      # divide by global std
 
     # Data
     "data_root": "data/",
@@ -81,12 +103,12 @@ DEFAULT_CONFIG = {
 
     # W&B
     "wandb_project": "tnafmol",
-    "wandb_group": "hyp_002",
-    "wandb_tags": ["hypothesis", "hyp_002", "OPTIMIZE"],
-    "wandb_notes": "Diagnostic run to understand baseline TarFlow behavior",
+    "wandb_group": "hyp_003",
+    "wandb_tags": ["hypothesis", "hyp_003", "OPTIMIZE"],
+    "wandb_notes": "hyp_003 diagnostic: all three fixes enabled. Checking log_det stabilization.",
 
     # Output
-    "output_dir": "experiments/hypothesis/hyp_002_tarflow",
+    "output_dir": "experiments/hypothesis/hyp_003_tarflow_stabilization",
 }
 
 
@@ -151,6 +173,7 @@ def evaluate_molecule(
     n_samples: int,
     device: torch.device,
     temperature: float = 1.0,
+    global_std: Optional[float] = None,
 ) -> Dict:
     """Evaluate the model on a single molecule.
 
@@ -159,13 +182,13 @@ def evaluate_molecule(
         data_dir: path to processed molecule dataset
         n_samples: number of samples to generate
         device: compute device
+        temperature: sampling temperature
+        global_std: if provided, multiply samples by this to denormalize
+                    (model generates in normalized space, metrics need Angstroms)
 
     Returns:
         dict with valid_fraction, energy_wasserstein, pairwise_distance_divergence
     """
-    import torch
-    from torch.utils.data import DataLoader as DL
-
     data = np.load(os.path.join(data_dir, "dataset.npz"))
     ref_stats = torch.load(os.path.join(data_dir, "ref_stats.pt"), weights_only=False)
 
@@ -173,20 +196,23 @@ def evaluate_molecule(
     atom_types = torch.from_numpy(data["atom_types"]).to(device)
     mask = torch.from_numpy(data["mask"]).to(device)
     test_idx = data["test_idx"]
-    ref_positions = data["positions"][test_idx]  # (N_test, 21, 3)
+    ref_positions = data["positions"][test_idx]  # (N_test, 21, 3) — raw Angstroms
     ref_energies = data["energies"][test_idx]
 
-    # Generate samples
+    # Generate samples — model generates in normalized space if global_std was used
     model.eval()
     samples = model.sample(atom_types, mask, n_samples=n_samples, temperature=temperature)
     samples_np = samples.cpu().numpy()  # (n_samples, 21, 3)
+
+    # Denormalize: model generates in normalized space, metrics need raw Angstroms
+    if global_std is not None and global_std > 0:
+        samples_np = samples_np * global_std
 
     # Metrics
     mask_np = mask.cpu().numpy()
     vf, _ = valid_fraction(samples_np, mask_np)
 
-    # For energy, we need to approximate using ref stats
-    # We don't have an energy function, so we use pairwise distance divergence as proxy
+    # Pairwise distance divergence (proxy for structural quality)
     pw_div = pairwise_distance_divergence(samples_np, ref_positions, mask_np)
 
     # Min pairwise distances (for validity diagnosis)
@@ -219,7 +245,6 @@ def train(cfg: dict):
     output_dir = os.path.join(project_root, cfg["output_dir"])
 
     # Determine output subdirectory based on angle/stage
-    # For sweep runs: use a unique subdir per run (keyed by n_steps and lr)
     stage_subdir = cfg["stage"]
     if cfg["stage"] == "sweep":
         lr_str = f"lr{cfg['lr']:.0e}".replace("-0", "-").replace("+0", "")
@@ -229,10 +254,18 @@ def train(cfg: dict):
     raw_dir = os.path.join(stage_dir, "raw")
     os.makedirs(raw_dir, exist_ok=True)
 
+    # Compute global std for normalization
+    molecules = cfg.get("molecules") or list(MOLECULES.keys())
+    global_std = None
+    if cfg.get("normalize_to_unit_var", False):
+        global_std = compute_global_std(data_root, molecules, split="train")
+        cfg["global_std"] = global_std
+        print(f"Global std for normalization: {global_std:.4f} Angstroms")
+
     # W&B: if a run is already active (called from sweep agent), reuse it
     # Otherwise, init a new run.
     if wandb.run is None:
-        run_name = f"hyp_002_{cfg['angle']}_{cfg['stage']}"
+        run_name = f"hyp_003_{cfg['angle']}_{cfg['stage']}"
         if cfg.get("run_name_suffix"):
             run_name = run_name + "_" + cfg["run_name_suffix"]
 
@@ -249,6 +282,7 @@ def train(cfg: dict):
             tags=tags,
             notes=cfg.get("wandb_notes", ""),
             config=cfg,
+            entity="kaityrusnelson1",
         )
     else:
         # Already running inside a sweep agent — update config with any new keys
@@ -269,21 +303,36 @@ def train(cfg: dict):
         atom_type_emb_dim=cfg["atom_type_emb_dim"],
         dropout=cfg["dropout"],
         max_atoms=MAX_ATOMS,
-        log_scale_max=cfg.get("log_scale_max", 0.5),
+        alpha_pos=cfg.get("alpha_pos", 0.1),
+        alpha_neg=cfg.get("alpha_neg", 2.0),
         shift_only=cfg.get("shift_only", False),
         use_actnorm=cfg.get("use_actnorm", False),
     ).to(device)
 
     n_params = model.count_parameters()
     print(f"Model parameters: {n_params:,}")
-    wandb.config.update({"n_params": n_params})
+    wandb.config.update({"n_params": n_params}, allow_val_change=True)
 
-    # Dataset
-    molecules = cfg.get("molecules") or list(MOLECULES.keys())
-    train_ds = MultiMoleculeDataset(data_root, split="train", molecules=molecules)
-    val_ds = MultiMoleculeDataset(data_root, split="val", molecules=molecules)
+    # EMA setup (HEURISTICS angle)
+    ema = None
+    if cfg.get("use_ema", False):
+        ema = EMAModel(model, decay=cfg.get("ema_decay", 0.999))
+        print(f"EMA enabled with decay={cfg.get('ema_decay', 0.999)}")
+
+    # Dataset — with augmentation and normalization
+    augment_train = cfg.get("augment_train", False)
+    train_ds = MultiMoleculeDataset(
+        data_root, split="train", molecules=molecules,
+        augment=augment_train, global_std=global_std
+    )
+    val_ds = MultiMoleculeDataset(
+        data_root, split="val", molecules=molecules,
+        augment=False, global_std=global_std  # no augmentation for validation
+    )
 
     print(f"Train size: {len(train_ds):,}, Val size: {len(val_ds):,}")
+    print(f"Augment train: {augment_train}, Global std: {global_std}")
+
     train_loader = DataLoader(
         train_ds,
         batch_size=cfg["batch_size"],
@@ -301,8 +350,29 @@ def train(cfg: dict):
     )
 
     # Optimizer
-    optimizer = torch.optim.AdamW(model.parameters(), lr=cfg["lr"], weight_decay=1e-5)
-    scheduler = get_cosine_schedule(optimizer, cfg["n_steps"], cfg["warmup_steps"])
+    betas = tuple(cfg.get("betas", [0.9, 0.999]))
+    weight_decay = cfg.get("weight_decay", 1e-5)
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=cfg["lr"],
+        betas=betas, weight_decay=weight_decay
+    )
+
+    # LR Schedule
+    lr_schedule = cfg.get("lr_schedule", "cosine")
+    if lr_schedule == "onecycle":
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer,
+            max_lr=cfg["lr"],
+            total_steps=cfg["n_steps"],
+            pct_start=0.05,  # 5% warmup
+            anneal_strategy="cos",
+        )
+    else:
+        # Default: cosine with warmup
+        scheduler = get_cosine_schedule(optimizer, cfg["n_steps"], cfg.get("warmup_steps", 500))
+
+    # Log-det regularization weight
+    log_det_reg_weight = cfg.get("log_det_reg_weight", 0.0)
 
     # Training loop
     best_val_loss = float("inf")
@@ -315,6 +385,7 @@ def train(cfg: dict):
     model.train()
 
     print(f"\nStarting training for {cfg['n_steps']} steps...")
+    print(f"log_det_reg_weight={log_det_reg_weight}, alpha_pos={cfg.get('alpha_pos', 0.1)}, alpha_neg={cfg.get('alpha_neg', 2.0)}")
     t_start = time.time()
 
     while step < cfg["n_steps"]:
@@ -329,12 +400,15 @@ def train(cfg: dict):
         atom_types = batch["atom_types"].to(device)  # (B, 21)
         atom_mask = batch["mask"].to(device)  # (B, 21)
 
-        # If atom_types/mask are per-dataset (not per-sample), they come as (B, 21)
-        # from the multi-molecule dataset. This is correct.
-
         # Forward + loss
         optimizer.zero_grad()
-        loss, info = model.nll_loss(positions, atom_types, atom_mask)
+        loss, info = model.nll_loss(
+            positions, atom_types, atom_mask,
+            log_det_reg_weight=log_det_reg_weight
+        )
+
+        # Sanity check — finite loss
+        assert torch.isfinite(loss), f"Non-finite loss at step {step}: {loss.item()}"
 
         # Backward
         loss.backward()
@@ -345,21 +419,32 @@ def train(cfg: dict):
         optimizer.step()
         scheduler.step()
 
+        # EMA update
+        if ema is not None:
+            ema.update()
+
         step += 1
 
         # Log
         if step % 50 == 0 or step == 1:
             elapsed = time.time() - t_start
-            lr = scheduler.get_last_lr()[0]
+            lr = scheduler.get_last_lr()[0] if hasattr(scheduler, 'get_last_lr') else cfg["lr"]
+            log_det_per_dof = info.get("log_det_per_dof", 0.0)
             print(
                 f"Step {step}/{cfg['n_steps']} | loss={loss.item():.4f} | "
-                f"log_det={info['total_log_det']:.2f} | "
+                f"nll_only={info.get('nll_loss_only', 0.0):.4f} | "
+                f"log_det/dof={log_det_per_dof:.3f} | "
+                f"log_det_penalty={info.get('log_det_penalty', 0.0):.4f} | "
                 f"grad_norm={grad_norm:.3f} | lr={lr:.2e} | t={elapsed:.1f}s"
             )
             wandb.log({
                 "train/loss": loss.item(),
                 "train/nll": info["nll"],
+                "train/nll_per_dof": info["nll_per_dof"],
+                "train/nll_loss_only": info.get("nll_loss_only", info["nll_per_dof"]),
                 "train/log_det": info["total_log_det"],
+                "train/log_det_per_dof": info.get("log_det_per_dof", 0.0),
+                "train/log_det_penalty": info.get("log_det_penalty", 0.0),
                 "train/log_pz": info["log_pz"],
                 "train/grad_norm": grad_norm,
                 "train/lr": lr,
@@ -368,19 +453,29 @@ def train(cfg: dict):
 
         # Validation
         if step % cfg["val_interval"] == 0 or step == cfg["n_steps"]:
+            # Use EMA model for validation if enabled
+            if ema is not None:
+                ema.apply_shadow()
+
             model.eval()
             val_losses = []
+            val_log_det_per_dofs = []
             with torch.no_grad():
                 for vbatch in val_loader:
                     vpos = vbatch["positions"].to(device)
                     vatypes = vbatch["atom_types"].to(device)
                     vmask = vbatch["mask"].to(device)
-                    vloss, _ = model.nll_loss(vpos, vatypes, vmask)
+                    vloss, vinfo = model.nll_loss(vpos, vatypes, vmask, log_det_reg_weight=0.0)
                     val_losses.append(vloss.item())
+                    val_log_det_per_dofs.append(vinfo.get("log_det_per_dof", 0.0))
 
             val_loss = np.mean(val_losses)
-            print(f"  Val loss: {val_loss:.4f}")
-            wandb.log({"val/loss": val_loss}, step=step)
+            val_log_det_per_dof = np.mean(val_log_det_per_dofs)
+            print(f"  Val loss: {val_loss:.4f} | Val log_det/dof: {val_log_det_per_dof:.3f}")
+            wandb.log({
+                "val/loss": val_loss,
+                "val/log_det_per_dof": val_log_det_per_dof,
+            }, step=step)
 
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
@@ -392,8 +487,12 @@ def train(cfg: dict):
                     "config": cfg,
                     "best_val_loss": best_val_loss,
                     "git_hash": cfg["git_hash"],
+                    "global_std": global_std,
                 }, checkpoint_path)
                 print(f"  Saved best checkpoint at step {step} (val_loss={val_loss:.4f})")
+
+            if ema is not None:
+                ema.restore()
 
             model.train()
 
@@ -406,11 +505,17 @@ def train(cfg: dict):
         "best_val_loss": best_val_loss,
         "best_step": best_step,
         "git_hash": cfg["git_hash"],
+        "global_std": global_std,
     }, final_checkpoint_path)
 
     # Load best checkpoint for evaluation
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
     model.load_state_dict(ckpt["model_state_dict"])
+
+    # Apply EMA weights for final evaluation
+    if ema is not None:
+        ema.apply_shadow()
+
     model.eval()
     print(f"\nLoaded best checkpoint from step {best_step} (val_loss={best_val_loss:.4f})")
 
@@ -430,6 +535,7 @@ def train(cfg: dict):
                 model, mol_data_dir,
                 n_samples=cfg.get("eval_n_samples", 500),
                 device=device,
+                global_std=global_std,
             )
         mol_results[mol] = result
 
@@ -444,6 +550,9 @@ def train(cfg: dict):
             f"eval/{mol}/min_dist_mean": result["min_dist_mean"],
             f"eval/{mol}/min_dist_below_08": result["min_dist_below_08"],
         }, step=step)
+
+    if ema is not None:
+        ema.restore()
 
     # Summary metrics
     valid_fracs = [r["valid_fraction"] for r in mol_results.values()]
@@ -461,8 +570,7 @@ def train(cfg: dict):
     # Save config
     config_path = os.path.join(stage_dir, "config.json")
     with open(config_path, "w") as f:
-        # Convert non-serializable values
-        cfg_save = {k: v for k, v in cfg.items()}
+        cfg_save = dict(cfg)
         json.dump(cfg_save, f, indent=2)
 
     # W&B summary
@@ -475,10 +583,14 @@ def train(cfg: dict):
         "mol_results": mol_results,
         "checkpoint_path": checkpoint_path,
         "results_path": results_path,
+        "global_std": global_std,
     })
 
     # Log artifacts
-    ckpt_artifact = wandb.Artifact(f"hyp_002_{cfg['angle']}_{cfg['stage']}_model", type="model")
+    exp_id = cfg.get("exp_id", "hyp_003")
+    angle = cfg.get("angle", "sanity")
+    stage = cfg.get("stage", "diag")
+    ckpt_artifact = wandb.Artifact(f"{exp_id}_{angle}_{stage}_model", type="model")
     ckpt_artifact.add_file(checkpoint_path)
     wandb.log_artifact(ckpt_artifact)
 
