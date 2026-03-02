@@ -1,0 +1,96 @@
+{
+  "exp_id": "hyp_003",
+  "command": "OPTIMIZE",
+  "status": "pending",
+  "created": "2026-03-01T18:00:00Z",
+  "last_updated": "2026-03-01T18:00:00Z",
+  "machine": {
+    "host": "localhost",
+    "user": "kai_nelson",
+    "gpu": "cuda:8",
+    "pid": null,
+    "claude_session_id": null
+  },
+  "artifacts": {
+    "dataset": "data/",
+    "checkpoints": [],
+    "raw_outputs": []
+  },
+  "steps": [
+    {
+      "name": "implementation",
+      "status": "pending",
+      "acceptance": "All code changes implemented in src/model.py, src/data.py, src/train.py: asymmetric clamping, log-det regularization, soft equivariance augmentation, EMA class, OneCycleLR option. Code committed."
+    },
+    {
+      "name": "diagnostic",
+      "status": "pending",
+      "acceptance": "Diagnostic run (500 steps, cuda:8) completes. log_det_per_dof stays in [-2, 2]. Loss decreases. Diagnostic report written to reports/diagnostic_report.md and committed."
+    },
+    {
+      "name": "plan",
+      "status": "pending",
+      "acceptance": "Plan Sub-report with SANITY/HEURISTICS/SCALE angles written to reports/plan_report.md, approved by Postdoc, and committed."
+    },
+    {
+      "name": "angle_sanity_val",
+      "status": "pending",
+      "acceptance": "SANITY validation run (2000 steps) completes. Promising if valid_fraction > 0.1 on any molecule."
+    },
+    {
+      "name": "angle_sanity_sweep",
+      "status": "pending",
+      "acceptance": "W&B Bayesian sweep (~30 runs) over log_det_reg_weight, alpha_pos, shift_only, lr completes. Best config selected."
+    },
+    {
+      "name": "angle_sanity_full",
+      "status": "pending",
+      "acceptance": "Full training run with best sweep config (10000+ steps). Success: valid_fraction >= 0.5 on at least 4/8 molecules."
+    },
+    {
+      "name": "angle_heuristics_val",
+      "status": "pending",
+      "acceptance": "HEURISTICS validation run with SBG recipe (AdamW, OneCycleLR, EMA, batch_size=512). Promising if valid_fraction > 0.1."
+    },
+    {
+      "name": "angle_heuristics_sweep",
+      "status": "pending",
+      "acceptance": "If val promising: sweep over EMA decay, LR, weight_decay. Best config selected."
+    },
+    {
+      "name": "angle_heuristics_full",
+      "status": "pending",
+      "acceptance": "Full training run with best HEURISTICS config (20000+ steps). Success: valid_fraction >= 0.5 on at least 4/8 molecules."
+    },
+    {
+      "name": "angle_scale_val",
+      "status": "pending",
+      "acceptance": "SCALE validation run with d_model=256, n_blocks=12. Promising if improvement over prior angles."
+    },
+    {
+      "name": "angle_scale_full",
+      "status": "pending",
+      "acceptance": "Full SCALE run (50000 steps). Success: valid_fraction >= 0.5 on at least 4/8 molecules."
+    },
+    {
+      "name": "visualizations",
+      "status": "pending",
+      "acceptance": "All required visualizations generated: loss curves, energy histograms, pairwise distance distributions, min pairwise distance histograms, denoising/generation trajectory, sweep comparison plot."
+    },
+    {
+      "name": "final_report",
+      "status": "pending",
+      "acceptance": "Final Experiment Report written to reports/final_report.md and committed."
+    },
+    {
+      "name": "source_integration",
+      "status": "pending",
+      "acceptance": "No .py files in experiment dir. src/ reflects current practice. All code promoted."
+    },
+    {
+      "name": "merge_and_tag",
+      "status": "pending",
+      "acceptance": "Merged to main with tag hyp_003. Pre-merge checks pass."
+    }
+  ]
+}
