@@ -1,6 +1,7 @@
 # TNAFMOL — Research Story
 
 ## Changelog
+- 2026-03-02 PIVOT: hyp_004 changed from DDPM baseline to TarFlow Architectural Ablation + Optimization. Three architectural gaps identified in hyp_003 analysis: (1) causal masking hides future atom types during generation, (2) no permutation augmentation (atoms have arbitrary ordering), (3) no positional encodings. hyp_004 ablates bidirectional type conditioning, permutation augmentation, and positional encodings on top of hyp_003 stabilization baseline, then optimizes best config with SBG recipe. DDPM becomes hyp_005. Experiment plan updated.
 - 2026-03-01 hyp_003 FAILURE confirmed. Asymmetric clamping + log-det regularization creates a stable saturation equilibrium at log_det/dof = alpha_pos. Best mean valid fraction 18.3%, 0/8 molecules ≥ 50%. TarFlow is confirmed not viable for molecular conformations. DDPM becomes hyp_004. Open Risks updated.
 - 2026-03-01 PIVOT: hyp_003 changed from DDPM baseline to TarFlow stabilization. Instead of moving directly to diffusion, we attempt to fix TarFlow's log_det exploitation using three targeted interventions: asymmetric soft scale clamping (Andrade et al. 2024), log-det regularization penalty, and soft equivariance via SO(3) rotation + CoM noise augmentation with unit-variance normalization (SBG, Tan et al. 2025). If hyp_003 fails, DDPM becomes hyp_004. Experiment plan updated accordingly.
 - 2026-03-01 Updated after hyp_002 FAILURE. TarFlow autoregressive affine flow collapses on molecular data due to log_det exploitation. Added findings to Open Risks.
@@ -96,7 +97,8 @@ The energy oracle is applied identically to both models' outputs.
 
 ## Open Risks
 
-- **[CONFIRMED — hyp_002 + hyp_003]** TarFlow was designed for images. The autoregressive atom ordering interacts pathologically with 3D molecular structure: the autoregressive affine flow's MLE objective exploits any unconstrained scale degree of freedom to maximize log_det. hyp_002 showed three unbounded collapse modes (affine scale, shift, ActNorm scale). hyp_003 applied asymmetric soft clamping (Andrade et al. 2024) + log-det regularization + soft equivariance (SBG, Tan et al. 2025) — this prevents unbounded collapse but creates a stable saturation equilibrium at log_det/dof = alpha_pos. Best mean valid fraction 18.3%, 0/8 molecules ≥ 50%. The failure is architectural: TarFlow is not viable for molecular conformations under MLE training.
+- **[CONFIRMED — hyp_002 + hyp_003]** TarFlow's autoregressive affine flow with MLE training exploits unconstrained scale DOFs to maximize log_det. hyp_002: three unbounded collapse modes. hyp_003: asymmetric clamping prevents unbounded collapse but creates alpha_pos saturation equilibrium. Best mean valid fraction 18.3%, 0/8 molecules ≥ 50%.
+- **[UNDER INVESTIGATION — hyp_004]** Three architectural gaps may contribute to the saturation equilibrium: (1) causal masking hides future atom types, so the model cannot condition on full molecular composition during generation — it builds each atom without knowing what comes next; (2) no permutation augmentation, so the model may overfit to the arbitrary atom ordering in the dataset; (3) no positional encodings, so the model cannot distinguish atom positions within the autoregressive sequence. hyp_004 ablates all three fixes and optimizes the best combination.
 - Canonical frame alignment quality depends on the mean structure reference per molecule.
 - Variable atom counts + padding may affect flow training differently than diffusion. Masked log-likelihood is essential.
 - Energy evaluation requires a reliable oracle; oracle errors could bias the comparison.
@@ -106,8 +108,9 @@ The energy oracle is applied identically to both models' outputs.
 1. **hyp_001**: Data pipeline -- download MD17, preprocess all 8 molecules into canonical frame, compute reference statistics.
 2. **hyp_002**: TarFlow -- implement the transformer autoregressive flow, train and tune (OPTIMIZE). **RESULT: FAILURE** -- log_det exploitation across 3 collapse modes.
 3. **hyp_003**: TarFlow stabilization -- fix log_det exploitation with asymmetric soft clamping (Andrade et al. 2024), log-det regularization, and soft equivariance (SBG, Tan et al. 2025). OPTIMIZE with SANITY/HEURISTICS/SCALE angles. **RESULT: FAILURE** -- alpha_pos saturation equilibrium. Best 18.3% mean valid fraction, 0/8 molecules ≥ 50%.
-4. **hyp_004**: DDPM -- implement the diffusion baseline with comparable architecture, train and tune (OPTIMIZE).
-5. **hyp_005** (or hyp_004 if hyp_003 succeeds): Head-to-head comparison -- evaluate both optimized models on all metrics, produce comparison table and visualizations.
+4. **hyp_004**: TarFlow Architectural Ablation + Optimization -- ablate three architectural fixes (bidirectional type conditioning, permutation augmentation, positional encodings) on top of hyp_003 stabilization baseline, then optimize best combination with SBG training recipe. Primary criterion: valid_fraction >= 0.5 on at least 4/8 molecules.
+5. **hyp_005**: DDPM -- implement the diffusion baseline with comparable architecture, train and tune (OPTIMIZE).
+6. **hyp_006** (conditional): Head-to-head comparison -- if both TarFlow (hyp_004) and DDPM (hyp_005) produce viable models, compare on all metrics.
 
 ## Success Criteria
 
