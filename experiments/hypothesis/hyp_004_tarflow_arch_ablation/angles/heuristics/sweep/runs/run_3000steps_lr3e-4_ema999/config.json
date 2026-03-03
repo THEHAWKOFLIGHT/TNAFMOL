@@ -1,7 +1,7 @@
 {
   "exp_id": "hyp_004",
   "angle": "heuristics",
-  "stage": "val",
+  "stage": "sweep",
   "command": "OPTIMIZE",
   "seed": 42,
   "device": "cuda:0",
@@ -20,11 +20,10 @@
   "use_perm_aug": false,
   "n_steps": 3000,
   "batch_size": 512,
-  "lr": 0.0003,
   "lr_schedule": "onecycle",
-  "warmup_steps": 500,
+  "warmup_steps": 0,
   "grad_clip_norm": 1.0,
-  "val_interval": 500,
+  "val_interval": 1000,
   "eval_n_samples": 500,
   "log_det_reg_weight": 5.0,
   "betas": [
@@ -33,7 +32,6 @@
   ],
   "weight_decay": 1e-05,
   "use_ema": true,
-  "ema_decay": 0.999,
   "augment_train": true,
   "normalize_to_unit_var": true,
   "data_root": "data/",
@@ -45,11 +43,12 @@
     "hyp_004",
     "OPTIMIZE",
     "heuristics",
-    "val"
+    "sweep"
   ],
-  "wandb_notes": "HEURISTICS val \u2014 SBG recipe (Tan et al. 2025) on D_pos config. betas=(0.9,0.95), OneCycleLR, EMA=0.999, bs=512",
   "output_dir": "experiments/hypothesis/hyp_004_tarflow_arch_ablation",
-  "run_name_suffix": "sbg_val",
   "global_std": 1.290462613105774,
-  "git_hash": "586f5437"
+  "lr": 0.0003,
+  "ema_decay": 0.999,
+  "run_name_suffix": "heur_sweep_lr3e-4_ema999",
+  "wandb_notes": "HEURISTICS sweep \u2014 SBG recipe, lr=3e-04, ema_decay=0.999"
 }

@@ -109,15 +109,36 @@
     },
     {
       "name": "angle_heuristics_val",
-      "status": "in_progress",
+      "status": "completed",
       "acceptance": "SBG recipe validation run (3000 steps) on D_pos config. Promising if valid_fraction > best SANITY full result (17.48%).",
-      "started_at": "2026-03-02T20:00:00Z",
-      "w_and_b": "https://wandb.ai/kaityrusnelson1/tnafmol/runs/ht2xyghi"
+      "completed_at": "2026-03-02T20:30:00Z",
+      "result": {
+        "mean_vf": 0.1793,
+        "best_val_loss": 0.8116,
+        "best_step": 1500,
+        "w_and_b": "https://wandb.ai/kaityrusnelson1/tnafmol/runs/ht2xyghi",
+        "per_mol": {
+          "aspirin": 0.018,
+          "benzene": 0.242,
+          "ethanol": 0.378,
+          "malonaldehyde": 0.368,
+          "naphthalene": 0.044,
+          "salicylic_acid": 0.082,
+          "toluene": 0.098,
+          "uracil": 0.204
+        },
+        "promising": true,
+        "delta_vs_sanity_full": "+0.45ppt",
+        "notes": "Technically passes promising criterion (17.93% > 17.48%). Small gain vs SANITY full — SBG improves smaller molecules by +2-3ppt each but slightly hurts ethanol/malonaldehyde. Pattern differs from hyp_003 where SBG gave +3.7ppt; here baseline already higher due to pos_enc. Best checkpoint at step 1500 (better val_loss 0.8116 vs SANITY full 0.8176)."
+      }
     },
     {
       "name": "angle_heuristics_sweep",
-      "status": "pending",
-      "acceptance": "Sweep completed. Best config selected. Sweep URL logged."
+      "status": "in_progress",
+      "acceptance": "Sweep completed. Best config selected. Sweep URL logged.",
+      "started_at": "2026-03-02T20:30:00Z",
+      "sweep_configs": "9 runs: ema_decay=[0.99,0.999,0.9999] x lr=[1e-4,3e-4,1e-3], bs=512 fixed",
+      "pid": 1226110
     },
     {
       "name": "angle_heuristics_full",
