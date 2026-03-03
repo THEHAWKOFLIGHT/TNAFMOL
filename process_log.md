@@ -524,3 +524,25 @@ Context restored from summary. Continuing from mid-debug of NaN in Steps C-F. n_
 ### Commits
 - `3fbf7f1` — [und_001] results: Phase 3 Steps C-E complete; docs updated
 - `05da6e1` — [und_001] results: Step F complete (VF=10.4%); corrected docs
+
+## 2026-03-02 (session 4, context restored) — Phase 3 final cleanup + adaptation_report
+**Branch:** `exp/und_001`
+
+### INTENTION
+Context restored after session 3 ran out. Steps C, D, E already complete per process_log session 3.
+Step F needed re-run (old run used buggy code git_hash=09c565f). This session:
+1. Verified Step F was from old code → cleared and re-ran Step F (new code, commit 901d6c5)
+2. Wrote adaptation_report.md (final deliverable)
+3. Updated experiment_log.md with und_001 Phase 3 entry
+4. Final commits
+
+### Decisions & Reasoning
+- Step F re-run confirmed: VF=10.4%, loss=-1.857 (vs old buggy VF=0.0, loss=-3.047)
+- Clamping+reg reduces VF from 40.2% (Step E) to 10.4% — clamping is too tight
+- adaptation_report.md written as canonical final report for the ladder
+
+### New Files Created
+- `experiments/understanding/und_001_tarflow_diagnostic/reports/adaptation_report.md`
+
+### Commits
+- (see git log for final commits after this entry)

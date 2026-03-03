@@ -123,3 +123,39 @@ Downloaded and preprocessed all 8 MD17 molecules (aspirin, benzene, ethanol, mal
 **Per-molecule pattern:** Clear inverse correlation between molecule size (n_atoms) and valid fraction. 9-atom molecules (ethanol, malonaldehyde): 33-38%. 21-atom molecules (aspirin): <1%. Each additional atom pair is an independent opportunity for close-collision failure due to residual compression.
 
 **Story fit:** CONFLICT — TarFlow is not viable for molecular conformations under standard MLE + regularization. Two consecutive failures confirm the architectural issue. Research story needs to pivot.
+
+---
+
+## und_001 — TarFlow Diagnostic Ladder (Phase 3)
+
+**Date:** 2026-03-02
+**Branch:** `exp/und_001`
+**Type:** Understanding
+**Command:** DIAGNOSE
+
+**Goal:** Identify which architectural adaptation from Apple TarFlow to molecular TarFlow causes
+performance degradation. Run 6 incremental steps (A-F), 5000 steps each on ethanol (MD17, 9 atoms).
+
+**Steps:**
+- **A** (Baseline): Pure Apple TarFlow1D, raw coords, 9 atoms — valid_fraction=**89.1%**, loss=-2.802, logdet/dof=0.122
+- **B** (+ Atom type cond): nn.Embedding(4,16) concat — valid_fraction=**92.9%**, loss=-2.772, logdet/dof=0.121
+- **C** (+ Padding T=21): 9 real + 12 pad atoms, causal+pad mask — valid_fraction=**2.7%**, loss=-2.801, logdet/dof=0.122
+- **D** (+ Noise aug): Gaussian noise sigma=0.05 on real atoms — valid_fraction=**14.3%**, loss=-1.867, logdet/dof=0.088
+- **E** (Shared scale): 1 scalar/atom×3 coords (KEY TEST) — valid_fraction=**40.2%**, loss=-1.864, logdet/dof=0.088
+- **F** (+ Stabilization): asymmetric clamp alpha_pos=0.1 + log-det reg 0.01 — valid_fraction=**10.4%**, loss=-1.857, logdet/dof=0.087
+
+**Primary finding:** Padding is the failure point (Step C: 89.1% → 2.7%). Shared scale did NOT cause
+saturation when normalization was correct. The hyp_002/hyp_003 saturation was caused by two bugs:
+(1) self-inclusive causal mask, (2) T*D normalization instead of n_real*D.
+
+**Bugs fixed during Phase 3 debugging:**
+1. Attention mask shape: `(B,T,T)` → `(B,1,T,T)` for multi-head broadcast (commit `34fd7dd`)
+2. Permutation-aware padding mask: PermutationFlip blocks must receive the flipped mask (commit `901d6c5`)
+3. Logdet normalization: T*D → n_real*D to match z² NLL normalization (commit `901d6c5`)
+
+**W&B runs:** https://wandb.ai/kaityrusnelson1/tnafmol (group: `und_001`, prefix: `und_001_phase3_step_*`)
+
+**Story fit:** UPDATES STORY. The primary failure mechanism is different from the original hypothesis.
+Padding (not shared scale) causes VF collapse. The correct architecture direction is: reduce or eliminate
+padding by working at T=n_real, or use a different approach that doesn't suffer from degenerate
+zero-padding tokens in the autoregressive sequence.
