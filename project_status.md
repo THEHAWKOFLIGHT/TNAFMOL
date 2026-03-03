@@ -45,3 +45,14 @@ Append-only log. One entry per experiment.
 **Failure modes:** None (experiment-level). The PARTIAL status reflects the alpha_pos equilibrium ceiling, not an implementation failure.
 **Story fit:** FITS (partially) — confirms alpha_pos equilibrium is the fundamental bottleneck. Architectural improvements help within the constraint but cannot break it. Assessment revised from "fundamentally broken" to "constrained with ~30% ceiling."
 **Concerns:** None — result is conclusive. TarFlow is exhausted. Proceed to DDPM.
+
+---
+
+### und_001 — TarFlow Diagnostic Ladder
+**Date:** 2026-03-03 | **Status:** DONE
+**Tag:** `und_001` | **Merge commit:** `85a1cec`
+**Result:** Architecture ceiling 98.2% mean VF (no padding). Multi-molecule padded 20.8% mean VF. Padding identified as sole failure mechanism. Two implementation bugs found and fixed (logdet normalization, causal mask). Shared scale hypothesis refuted.
+**PhD quality:** CLEAN — multiple PhD agents across phases, all completed successfully. 4 bugs discovered and fixed during Phase 3 debugging. All 31 training runs completed without NaN events.
+**Failure modes:** None — diagnostic achieved its goal completely.
+**Story fit:** FITS with correction — shared scale hypothesis was wrong; padding is the primary failure. RESEARCH_STORY.md updated.
+**Concerns:** CIFAR-10 baseline verification (Phase 2 Level 2) still training at step 23500/50000. Non-blocking — does not affect molecular diagnostic conclusions.

@@ -1,6 +1,7 @@
 # TNAFMOL — Research Story
 
 ## Changelog
+- 2026-03-03 und_001 DONE. TarFlow Diagnostic Ladder identifies padding as the sole failure mechanism. Architecture ceiling: 98.2% mean VF across all 8 molecules (no padding). Multi-molecule padded: 20.8% mean VF. hyp_002/hyp_003 failures traced to two implementation bugs (logdet normalization T*D vs n_real*D, self-inclusive causal mask). Shared scale hypothesis refuted. Alpha_pos equilibrium was a bug artifact, not architectural. TarFlow is viable per-molecule; padding is the multi-molecule bottleneck. Open Risks and Experiment Plan updated.
 - 2026-03-02 hyp_004 PARTIAL confirmed. Positional encodings (+5ppt) + SBG recipe with lr=1e-3/ema=0.99 (+12ppt) push TarFlow to 29.5% mean VF (sweep) / 26.7% (full). 1/8 molecules ≥ 50%. Alpha_pos equilibrium persists unchanged. Assessment revised from "fundamentally broken" to "constrained with ~30% ceiling." Open Risks updated. Experiment plan updated with hyp_004 result.
 - 2026-03-02 PIVOT: hyp_004 changed from DDPM baseline to TarFlow Architectural Ablation + Optimization. Three architectural gaps identified in hyp_003 analysis: (1) causal masking hides future atom types during generation, (2) no permutation augmentation (atoms have arbitrary ordering), (3) no positional encodings. hyp_004 ablates bidirectional type conditioning, permutation augmentation, and positional encodings on top of hyp_003 stabilization baseline, then optimizes best config with SBG recipe. DDPM becomes hyp_005. Experiment plan updated.
 - 2026-03-01 hyp_003 FAILURE confirmed. Asymmetric clamping + log-det regularization creates a stable saturation equilibrium at log_det/dof = alpha_pos. Best mean valid fraction 18.3%, 0/8 molecules ≥ 50%. TarFlow is confirmed not viable for molecular conformations. DDPM becomes hyp_004. Open Risks updated.
@@ -91,27 +92,29 @@ The energy oracle is applied identically to both models' outputs.
 ## Key Assumptions
 
 - Canonical frame alignment removes rotation/translation DOFs. Models do NOT need equivariance.
-- Padding + attention mask handles variable atom counts (9-21 atoms).
+- **[REVISED — und_001]** Padding + attention mask was assumed to handle variable atom counts (9-21 atoms). und_001 showed padding catastrophically degrades TarFlow performance. Per-molecule models (T=n_real, no padding) are the viable path for TarFlow. DDPM may handle padding differently — to be tested.
 - No reweighting or rejection sampling: raw sample quality is the test.
 - MD17 conformations are near-equilibrium (500K thermal distribution).
 - Fair comparison requires comparable parameter counts and training compute.
 
 ## Open Risks
 
-- **[CONFIRMED — hyp_002 + hyp_003 + hyp_004]** TarFlow's autoregressive affine flow with MLE training is constrained by the alpha_pos saturation equilibrium. The equilibrium (loss→0.869, log_det/dof→0.100 by step ~150) is robust across all architectural variants and training recipes tested (20+ configurations). Performance ceiling: ~30% mean valid fraction, with only the smallest molecules (9 atoms) occasionally crossing the 50% threshold. Not "fundamentally broken" (the model does learn real structure), but capped.
-- **[RESOLVED — hyp_004]** Of the three architectural gaps investigated: (1) bidirectional type conditioning provides no benefit — full molecular composition knowledge does not help; (2) permutation augmentation slightly hurts — atom ordering in MD17 carries informative structural information; (3) positional encodings help (+5ppt) — the autoregressive blocks benefit from explicit position context. The dominant improvement came from training recipe: lr=1e-3 with OneCycleLR + EMA=0.99 gives +12ppt over the best architecture alone.
+- **[RESOLVED — und_001]** The alpha_pos saturation equilibrium observed in hyp_002/hyp_003/hyp_004 was caused by two implementation bugs, not architectural limitations: (1) logdet normalization by T*D instead of n_real*D shifted the NLL equilibrium below physical bond lengths, enabling exploitation; (2) SOS token with self-inclusive causal mask created a non-triangular Jacobian (biased NLL). With both bugs fixed (und_001, commit 901d6c5), TarFlow achieves 94-100% VF on all 8 molecules at their natural sizes (T=n_real, no padding). The "~30% ceiling" from hyp_004 was a padding ceiling, not an architectural ceiling.
+- **[CONFIRMED — und_001]** Padding is the sole remaining obstacle for multi-molecule TarFlow. When molecules are padded to T=21 for multi-molecule training, VF degrades smoothly with padding fraction (95% at 0% padding to ~0% at 100%). Mean VF at T=21: 20.8%. Aromatic molecules (naphthalene, toluene) collapse to 0% at just 14-29% padding. The mechanism: padding tokens corrupt attention context and create gradient imbalances in the log-det objective. No augmentation or regularization tested resolves this — an architectural solution (padding-free variable-length architecture, or per-molecule models) is required.
+- **[RESOLVED — hyp_004]** Of the three architectural gaps investigated: (1) bidirectional type conditioning provides no benefit; (2) permutation augmentation slightly hurts — atom ordering is informative; (3) positional encodings help (+5ppt). Note: hyp_004's improvements were within the buggy alpha_pos equilibrium and are superseded by und_001's bug fixes.
 - Canonical frame alignment quality depends on the mean structure reference per molecule.
-- Variable atom counts + padding may affect flow training differently than diffusion. Masked log-likelihood is essential.
 - Energy evaluation requires a reliable oracle; oracle errors could bias the comparison.
 
 ## Experiment Plan
 
 1. **hyp_001**: Data pipeline -- download MD17, preprocess all 8 molecules into canonical frame, compute reference statistics.
-2. **hyp_002**: TarFlow -- implement the transformer autoregressive flow, train and tune (OPTIMIZE). **RESULT: FAILURE** -- log_det exploitation across 3 collapse modes.
-3. **hyp_003**: TarFlow stabilization -- fix log_det exploitation with asymmetric soft clamping (Andrade et al. 2024), log-det regularization, and soft equivariance (SBG, Tan et al. 2025). OPTIMIZE with SANITY/HEURISTICS/SCALE angles. **RESULT: FAILURE** -- alpha_pos saturation equilibrium. Best 18.3% mean valid fraction, 0/8 molecules ≥ 50%.
-4. **hyp_004**: TarFlow Architectural Ablation + Optimization -- ablate three architectural fixes (bidirectional type conditioning, permutation augmentation, positional encodings) on top of hyp_003 stabilization baseline, then optimize best combination with SBG training recipe. **RESULT: PARTIAL** -- pos_enc (+5ppt) + SBG lr=1e-3/ema=0.99 (+12ppt) push to 29.5% mean VF (sweep) / 26.7% (full). 1/8 molecules ≥ 50% (malonaldehyde 56.6%). Alpha_pos equilibrium persists. Fails 4+/8 primary criterion.
-5. **hyp_005**: DDPM -- implement the diffusion baseline with comparable architecture, train and tune (OPTIMIZE).
-6. **hyp_006** (conditional): Head-to-head comparison -- if both TarFlow (hyp_004) and DDPM (hyp_005) produce viable models, compare on all metrics.
+2. **hyp_002**: TarFlow -- implement the transformer autoregressive flow, train and tune (OPTIMIZE). **RESULT: FAILURE** -- log_det exploitation across 3 collapse modes. *Note: und_001 revealed this was caused by implementation bugs (logdet normalization + causal mask), not fundamental architecture.*
+3. **hyp_003**: TarFlow stabilization -- fix log_det exploitation with asymmetric soft clamping (Andrade et al. 2024), log-det regularization, and soft equivariance (SBG, Tan et al. 2025). OPTIMIZE with SANITY/HEURISTICS/SCALE angles. **RESULT: FAILURE** -- alpha_pos saturation equilibrium. Best 18.3% mean valid fraction, 0/8 molecules ≥ 50%. *Note: und_001 showed the saturation was a bug artifact, not architectural.*
+4. **hyp_004**: TarFlow Architectural Ablation + Optimization -- ablate three architectural fixes on top of hyp_003 stabilization baseline. **RESULT: PARTIAL** -- pos_enc (+5ppt) + SBG recipe (+12ppt) push to 29.5% mean VF. *Note: improvements were within the buggy equilibrium; superseded by und_001 bug fixes.*
+5. **und_001**: TarFlow Diagnostic Ladder -- systematic 6-phase investigation using Apple's reference TarFlow implementation. **RESULT: DONE** -- architecture achieves 98.2% mean VF without padding. Padding identified as sole failure mechanism for multi-molecule models (20.8% mean VF at T=21). Two bugs discovered and fixed. Shared scale hypothesis refuted.
+6. **hyp_005** (next): Per-molecule TarFlow -- train one TarFlow per molecule at T=n_real (no padding). Expected 94-100% VF based on und_001 Config A. This provides the TarFlow baseline for DDPM comparison.
+7. **hyp_006**: DDPM -- implement the diffusion baseline with comparable architecture, train and tune (OPTIMIZE).
+8. **hyp_007** (conditional): Head-to-head comparison -- TarFlow (per-molecule, hyp_005) vs DDPM (hyp_006) on all metrics.
 
 ## Success Criteria
 

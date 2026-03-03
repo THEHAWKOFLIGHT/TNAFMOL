@@ -195,3 +195,56 @@ Environment note: PyTorch was broken on this machine (Windows DLL load failure).
 - HEURISTICS full: https://wandb.ai/kaityrusnelson1/tnafmol/runs/z50wvlbl
 
 **Story impact:** The result shifts the narrative from "TarFlow is fundamentally broken" (hyp_003 assessment) to "TarFlow is constrained with a ~30% ceiling." The alpha_pos equilibrium remains the bottleneck, but more performance is accessible within it than previously thought. The experiment plan does not change — DDPM is next (hyp_005) — but the characterization of TarFlow's failure is now more precise.
+
+---
+
+### 2026-03-03 — und_001 synthesis
+**Status:** DONE | **Failure level:** None
+**Branch:** `exp/und_001` | **Merge commit:** `85a1cec` | **Tag:** `und_001`
+
+**Experiment:** TarFlow Diagnostic Ladder — 6-phase systematic investigation using Apple's reference TarFlow implementation (arXiv:2412.06329) to identify exactly where and why TarFlow fails on molecular conformations.
+
+**PhD execution review:**
+- Multiple PhD agents across 5 experimental phases (Phases 2-5). All completed successfully.
+- Phase 1 (source comparison): Postdoc-authored, 13 differences documented
+- Phase 2 (Apple baseline): 2D Gaussian + MNIST complete, CIFAR-10 in progress (non-blocking)
+- Phase 3 (adaptation ladder): 6 steps on ethanol, 2 crashes from bugs discovered and fixed
+- Phase 4 (ablation matrix): 9 configs, all completed
+- Phase 5 (best config validation): 16 runs across all 8 molecules, all completed
+- 4 bugs discovered and fixed during execution (attention mask broadcasting, padding z-zeroing, PermutationFlip mask, logdet normalization)
+- All W&B runs properly tagged and grouped under project `tnafmol`, group `und_001`
+- Logs maintained (process_log.md, experiment_log.md — both updated)
+- Source integration: N/A — all code already in src/
+- 72 plot files generated across all phases
+
+**Key findings:**
+1. **Architecture ceiling: 98.2% mean VF** across all 8 MD17 molecules when padding is removed (T=n_real). Range: 94.3% (aspirin) to 100% (naphthalene, benzene). The TarFlow architecture is fundamentally sound for molecular conformations.
+2. **Padding is the sole failure mechanism.** VF collapses from 98% to 21% when molecules are padded to T=21. Smooth linear decline on ethanol (VF ~ 95% - 96% * pad_fraction), but molecule-specific collapse for aromatics (naphthalene 0% at 14% padding, toluene 0% at 29% padding).
+3. **Shared scale hypothesis was WRONG.** With correct normalization (n_real*D), shared scale performs comparably to per-dim scale (<1 pp difference at T=9). The hyp_002/003/004 saturation equilibrium was caused by two bugs, not architectural design.
+4. **Two critical bugs found:** (a) logdet normalization by T*D instead of n_real*D shifted the NLL equilibrium below physical bond lengths; (b) SOS token with self-inclusive causal mask created a non-triangular Jacobian. Both fixed in commit 901d6c5.
+5. **Noise augmentation (sigma=0.05) is essential** in the padded regime — provides +11-39 pp lift. Minimal effect without padding.
+6. **Clamping is harmful only with padding** (-30 pp at T=21, -2 pp at T=9). Not intrinsically bad.
+7. **Permutation augmentation is catastrophically incompatible** with autoregressive flows (-38 pp).
+
+**Postdoc verification:**
+- Reviewed all 6 phase reports (source_comparison.md, ladder_report.md, phase3_report.md/adaptation_report.md, ablation_report.md, phase5_report.md, final_report.md)
+- Reviewed all major plots: Phase 4 (3 plots: summary, padding sweep, crossing heatmap), Phase 5 (2 plots: summary bars, padding scaling)
+- Verified cross-phase consistency: ethanol Step E (40.2%) reproduced exactly in Phase 4 and Phase 5
+- Pre-merge consistency checks: all passed
+- Merge conflicts in experiment_log.md and process_log.md (append-only logs with parallel hyp_004 entries) — resolved by keeping both sides
+- RESEARCH_STORY.md updated with corrected findings: shared scale hypothesis refuted, padding identified as primary failure, experiment plan updated
+
+**Git recovery:**
+- Merge conflict (Level 2): experiment_log.md and process_log.md had parallel entries from hyp_004 (merged earlier to main) and und_001 (this branch). Both append-only — resolved by keeping all entries. No content lost.
+
+**Source integration:** N/A — all scripts already in src/ (tarflow_apple.py, train_ladder.py, train_phase3.py, train_phase4.py, train_phase5.py). No .py files in experiment directories. No promotion needed.
+
+**PhD execution quality:** CLEAN — no send-backs needed. Multiple PhD context recoveries handled via GUPP. Bugs found during Phase 3 were genuine implementation issues (not PhD errors) — discovered through the diagnostic ladder methodology.
+
+**W&B runs:**
+- Phase 3: und_001_phase3_step_{a,b,c,d,e,f} — https://wandb.ai/kaityrusnelson1/tnafmol (group: und_001)
+- Phase 4: und_001_phase4_config_{1-9} — https://wandb.ai/kaityrusnelson1/tnafmol (group: und_001)
+- Phase 5: und_001_phase5_config{A,B}_{molecule} — https://wandb.ai/kaityrusnelson1/tnafmol (group: und_001)
+- Phase 2 CIFAR-10 (ongoing): https://wandb.ai/kaityrusnelson1/tnafmol/runs/rlvxam2e
+
+**Story impact:** This is a major pivot for the project. The narrative changes from "TarFlow is architecturally incompatible with molecular data" to "TarFlow works excellently per-molecule; padding is the multi-molecule bottleneck." The experiment plan is updated: hyp_005 trains per-molecule TarFlow (T=n_real) for the DDPM comparison, rather than attempting more TarFlow fixes. The prior experiments (hyp_002/003/004) operated within two implementation bugs — their findings about the alpha_pos equilibrium are superseded by und_001's bug-free analysis.
