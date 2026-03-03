@@ -11,6 +11,7 @@
     "pid": null,
     "claude_session_id": null
   },
+  "last_updated": "2026-03-03T05:30:00Z",
   "artifacts": {},
   "steps": [
     {
@@ -22,21 +23,26 @@
     },
     {
       "name": "phase2_2d_gaussian",
-      "status": "pending",
+      "status": "completed",
       "acceptance": "Apple TarFlow trained on 2D 8-mode Gaussian mixture. Clean samples matching 8-mode density. Loss curve + sample scatter plot saved.",
-      "result": null
+      "result": {"best_loss": 0.91, "mode_coverage": 0.886, "n_params": 401416},
+      "completed_at": "2026-03-02T20:44:00Z"
     },
     {
       "name": "phase2_mnist",
-      "status": "pending",
+      "status": "completed",
       "acceptance": "Apple TarFlow trained on MNIST. bits/dim < 1.5, recognizable digit samples. Loss curve + sample grid saved.",
-      "result": null
+      "result": {"best_loss": -2.23, "bits_per_dim": -3.20, "n_params": 38000000},
+      "completed_at": "2026-03-02T20:57:00Z"
     },
     {
       "name": "phase2_cifar10",
-      "status": "pending",
+      "status": "in_progress",
       "acceptance": "Apple TarFlow trained on CIFAR-10. bits/dim < 3.5, recognizable image samples. Loss curve + sample grid saved.",
-      "result": null
+      "result": {"step_2000_loss": -1.9955, "status_at_2000": "stable_training"},
+      "started_at": "2026-03-02T21:14:00Z",
+      "last_progress": "2026-03-02T21:35:00Z",
+      "wandb_run": "https://wandb.ai/kaityrusnelson1/tnafmol/runs/rlvxam2e"
     },
     {
       "name": "phase3_step_a_swap_patches",

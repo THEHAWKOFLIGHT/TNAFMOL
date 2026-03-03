@@ -1,0 +1,21 @@
+{
+  "level": 2,
+  "name": "cifar10",
+  "exp_id": "und_001",
+  "command": "DIAGNOSE",
+  "seed": 42,
+  "device": "cuda:0",
+  "git_hash": "15c29f0ac24c81f58460083deb5dbb648743c39f",
+  "in_channels": 3,
+  "img_size": 32,
+  "patch_size": 4,
+  "channels": 768,
+  "num_blocks": 8,
+  "layers_per_block": 4,
+  "steps": 50000,
+  "batch_size": 64,
+  "lr": 0.0001,
+  "noise_sigma": 0.05,
+  "grad_clip_norm": 1.0,
+  "lr_schedule": "cosine"
+}
