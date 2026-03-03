@@ -9,6 +9,9 @@
 - `901d6c5` — [und_001] code: fix permutation-aware padding mask
 - `3fbf7f1` — [und_001] results: Phase 3 Steps C-E complete; docs updated
 - `05da6e1` — [und_001] results: Step F complete (VF=10.4%); corrected docs
+- `da9ac3a` — [und_001] docs: final report and process log for Phase 3
+- `901d6c5` — [und_001] code: fix permutation-aware padding mask (context-restored session)
+- `8e03ca9` — [und_001] results: Phase 3 adaptation_report.md + experiment/process log updates
 
 ---
 
@@ -141,5 +144,6 @@ occurred (normalization bugs + mask bug).
 | `results/phase3/step_{a-f}_*/loss_curve.png` | Training loss curves |
 | `results/phase3/step_{a-f}_*/pairwise_dist.png` | Pairwise distance distributions |
 | `reports/phase3_report.md` | Detailed step-by-step analysis |
+| `reports/adaptation_report.md` | Phase 3 ladder summary and diagnostic conclusions (canonical final report) |
 | `reports/source_comparison.md` | Phase 1 architectural diff (pre-existing) |
 | `reports/ladder_report.md` | Phase 2 benchmark results (pre-existing) |
