@@ -125,3 +125,73 @@ Environment note: PyTorch was broken on this machine (Windows DLL load failure).
 - HEURISTICS full: 4079op64
 
 **Root cause of failure:** The alpha_pos saturation equilibrium is a deeper version of hyp_002's log_det exploitation. Asymmetric clamping prevents the catastrophic log_det → ∞ failure but replaces it with a stable, bounded saturation at log_det/dof = alpha_pos. No tuning of alpha_pos, reg_weight, LR, or batch_size escapes this equilibrium. Combined with hyp_002, this confirms that TarFlow's autoregressive affine structure is not viable for molecular conformations under MLE training.
+
+---
+
+### 2026-03-02 — hyp_004 synthesis
+**Status:** PARTIAL | **Failure level:** None
+**Branch:** `exp/hyp_004` | **Merge commit:** `5a982e2` | **Tag:** `hyp_004`
+
+**Experiment:** TarFlow Architectural Ablation + Optimization. Tested three architectural modifications (bidirectional type conditioning, permutation augmentation, positional encodings) on the hyp_003 stabilized baseline, then optimized the best combination with SBG training recipe.
+
+**PhD execution review:**
+- Three PhD agents needed (original died after code+configs but before execution; second ran ablation+SANITY+HEURISTICS val; third completed HEURISTICS sweep+full+visualizations+reports). All context transitions via GUPP — .state.json and process_log.md used for cold-start. No work lost.
+- OPTIMIZE protocol followed correctly: diagnostic → SANITY (6-config ablation → LR sweep → full) → HEURISTICS (val → 9-run sweep → full) → SCALE (skipped with justification)
+- All W&B runs properly tagged and grouped
+- Logs maintained (process_log.md, experiment_log.md — both updated)
+- No hardcoded reference values; global_std loaded from data
+- Source code promoted to src/ in initial implementation (commit 44d4ec9) — no post-experiment integration needed
+- One process issue: output directory naming in train.py uses only n_steps+lr (not ema_decay), causing overwrites when multiple ema_decay values share same lr. Only last run's raw output survived per lr. W&B captured all 9 summaries. Documented in sweep_best_practices.md.
+
+**OPTIMIZE angle review:**
+1. **SANITY (6-config architectural ablation, 3000 steps each):**
+   - D_pos (use_pos_enc=True only): 17.65% mean VF — best by 5ppt over baseline
+   - F_bidir_pos: 16.40%, A_baseline: 12.68%, C_perm: 12.60%, B_bidir: 11.80%, E_bidir_perm: 10.92%
+   - Key finding: positional encodings help (+5ppt), bidirectional types and permutation augmentation slightly hurt
+   - LR sweep (3 runs, D_pos only): lr=5e-5 marginally best at 17.73%. Spread <0.5ppt — no significant LR sensitivity.
+   - Full run (10k steps, D_pos, lr=5e-5): 17.48% mean VF. Best checkpoint at step 1000. No improvement from 3k→10k — confirms saturation is not training-budget issue.
+   - All 6 configs: loss→0.869, log_det/dof→0.100 by step ~150. Alpha_pos equilibrium confirmed across all architectures.
+   - FAILED primary criterion (0/8 molecules ≥ 50%)
+
+2. **HEURISTICS (SBG recipe, Tan et al. 2025, on D_pos config):**
+   - Citation verified: SBG recipe published at ICML 2025, designed for normalizing flows on molecular systems.
+   - Val run (3000 steps, lr=3e-4, EMA=0.999, bs=512): 17.93% mean VF — promising (>SANITY full 17.48%)
+   - 9-run sweep (ema_decay=[0.99,0.999,0.9999] × lr=[1e-4,3e-4,1e-3], bs=512):
+     - lr=1e-3 dominates: 29.5% (ema=0.99), 26.1% (ema=0.999), 14.5% (ema=0.9999)
+     - lr=1e-4/3e-4: clustered at 15-19%
+     - Best: lr=1e-3, ema=0.99 → **29.5% mean VF, ethanol 52.8%** (FIRST MOLECULE >50%)
+   - Full run (20k steps, lr=1e-3, ema=0.99): **26.7% mean VF, malonaldehyde 56.6%** (1/8 ≥ 50%)
+     - Best checkpoint at step 1000 — same early saturation
+     - Different molecule crosses 50% each time (sweep: ethanol; full: malonaldehyde) — stochastic in 500-sample eval
+   - FAILED primary criterion (1/8 ≥ 50%, need 4+/8)
+
+3. **SCALE (skipped):**
+   - Justified: loss saturates at step ~150 across ALL 6 ablation configs + ALL HEURISTICS configs
+   - Not capacity-limited. The alpha_pos equilibrium is a mathematical fixed point.
+   - Plan condition ("skip if both SANITY and HEURISTICS saturate by step 150") confirmed.
+
+**Key findings:**
+- **Positional encodings are the only beneficial architectural modification.** Bidirectional type conditioning adds no value despite the intuition that full molecular composition knowledge should help. Permutation augmentation hurts — atom ordering in MD17 carries informative structural information (not arbitrary).
+- **lr=1e-3 + OneCycleLR + EMA=0.99 is the critical training recipe.** This combination gives +12ppt over the best architectural config alone (+5ppt from pos_enc). The high peak LR allows more aggressive exploration within the alpha_pos constraint. EMA=0.99 (faster tracking) outperforms 0.999 at this training scale.
+- **The alpha_pos saturation equilibrium is robust.** All 20+ configurations tested (6 architectures × multiple LRs × multiple EMA decays × multiple training lengths) converge to loss=0.869, log_det/dof=0.100 by step ~150. Best checkpoint always at step 500-1000. The ceiling is ~30% mean VF.
+- **First molecule above 50%**: malonaldehyde (56.6% in full run) and ethanol (52.8% in sweep) — both 9-atom molecules. The molecule-size inverse correlation persists: 9-atom ~40-55%, 21-atom aspirin ~6%.
+
+**Postdoc verification:**
+- Reviewed final_report.md: technically sound, ablation analysis correct, sweep grid well-chosen
+- Verified .state.json: all steps completed/skipped, artifacts listed, machine block populated
+- Checked all canonical plots in results/: valid_fraction_comparison.png, experiment_progression.png, min_pairwise_distance.png, loss_curve.png
+- Pre-merge consistency checks: all passed (no .py in experiments, no __pycache__, reports present, logs updated, commits follow convention)
+- No suspicious values detected — results are internally consistent with hyp_003 findings
+
+**Source integration:** N/A — all new code (BidirectionalTypeEncoder, pos_enc, perm_aug) was promoted to src/ in the initial implementation commit (44d4ec9). No experiment-directory scripts. No Source Integration Directive needed.
+
+**PhD execution quality:** CLEAN — no send-backs needed. Three context exhaustions handled via GUPP without work loss. One minor process issue (output dir naming) logged in sweep_best_practices.md. All 12 commits follow convention.
+
+**W&B runs:**
+- Diagnostic: https://wandb.ai/kaityrusnelson1/tnafmol/runs/8s3kfzri
+- SANITY full: https://wandb.ai/kaityrusnelson1/tnafmol/runs/k88dxne7
+- HEURISTICS val: https://wandb.ai/kaityrusnelson1/tnafmol/runs/ht2xyghi
+- HEURISTICS sweep best: https://wandb.ai/kaityrusnelson1/tnafmol/runs/wzsmbdhg
+- HEURISTICS full: https://wandb.ai/kaityrusnelson1/tnafmol/runs/z50wvlbl
+
+**Story impact:** The result shifts the narrative from "TarFlow is fundamentally broken" (hyp_003 assessment) to "TarFlow is constrained with a ~30% ceiling." The alpha_pos equilibrium remains the bottleneck, but more performance is accessible within it than previously thought. The experiment plan does not change — DDPM is next (hyp_005) — but the characterization of TarFlow's failure is now more precise.

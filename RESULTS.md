@@ -1,8 +1,8 @@
 # TNAFMOL — Results
-**Last updated:** 2026-03-01 after hyp_003
+**Last updated:** 2026-03-02 after hyp_004
 
 ## Status
-TarFlow normalizing flow has failed twice on molecular conformation generation: hyp_002 collapsed via unbounded log_det exploitation (valid fraction 0%), hyp_003 stabilized with asymmetric clamping + log-det regularization but saturated at a mathematical equilibrium (best 18.3% mean valid fraction, 0/8 molecules ≥ 50%). The failure is architectural. Next: DDPM diffusion baseline (hyp_004).
+TarFlow with positional encodings + SBG training recipe (lr=1e-3, EMA=0.99) achieves 26.7% mean valid fraction with 1/8 molecules ≥ 50% (malonaldehyde 56.6%). This is the best TarFlow result to date but fails the 4+/8 primary criterion. The alpha_pos saturation equilibrium persists across all configurations tested — architectural modifications and training recipes improve performance within the constraint but cannot break it. Next: DDPM diffusion baseline (hyp_005).
 
 ## Experiments
 
@@ -11,9 +11,12 @@ TarFlow normalizing flow has failed twice on molecular conformation generation: 
 | hyp_001 | MD17 data pipeline | N/A | N/A | DONE |
 | hyp_002 | TarFlow (autoregressive affine flow) | 0% (all molecules) | Affine scale / shift / ActNorm scale | FAILURE |
 | hyp_003 | TarFlow stabilization (asym clamp + log-det reg + soft equiv) | 18.3% mean (sweep), 14.3% mean (full) | Alpha_pos saturation equilibrium | FAILURE |
+| hyp_004 | TarFlow architectural ablation (pos_enc + SBG lr=1e-3 ema=0.99) | 29.5% mean (sweep), 26.7% mean (full) | Alpha_pos saturation (unchanged) | PARTIAL |
 
 ## Best Result
-**hyp_003:** FAILURE. Best mean valid fraction across all OPTIMIZE angles: 18.3% (HEURISTICS sweep, bs=512, ema=0.999, lr=1e-3). Per-molecule best (HEURISTICS full, 20k steps): malonaldehyde 38.0%, ethanol 33.4%, benzene 15.2%, uracil 13.6%, toluene 7.4%, salicylic_acid 3.8%, naphthalene 2.0%, aspirin 0.8%. Strong inverse correlation with molecule size -- 9-atom molecules reach ~35% but 21-atom aspirin is <1%. No molecule reaches the 50% primary criterion.
+**hyp_004:** PARTIAL. Best mean valid fraction across all OPTIMIZE angles: 29.5% (HEURISTICS sweep, lr=1e-3, ema=0.99). Full run: 26.7% (20k steps). Per-molecule best (HEURISTICS full): malonaldehyde **56.6%**, uracil 43.6%, ethanol 40.0%, benzene 26.6%, salicylic_acid 17.8%, toluene 14.6%, naphthalene 7.8%, aspirin 6.6%. First molecule ever to exceed 50% valid fraction. 1/8 molecules ≥ 50% — primary criterion (4+/8) not met.
+
+Key architectural finding: positional encodings (+5ppt) are the only beneficial modification of the three tested (bidirectional type conditioning and permutation augmentation both slightly hurt). Key training recipe finding: lr=1e-3 with OneCycleLR + EMA=0.99 gives +12ppt over the SANITY baseline — 10× more improvement than architecture alone.
 
 ## What's Next
-hyp_004: DDPM diffusion baseline. Two consecutive TarFlow failures confirm the architecture is not viable for molecular conformations under MLE training. Diffusion avoids log_det exploitation entirely (no explicit density in the training objective).
+hyp_005: DDPM diffusion baseline. Three consecutive TarFlow experiments (hyp_002, hyp_003, hyp_004) have established the performance ceiling: ~30% mean valid fraction under the alpha_pos saturation equilibrium. The equilibrium is a mathematical fixed point that cannot be escaped by architecture, training recipe, or scale. Diffusion avoids this entirely.

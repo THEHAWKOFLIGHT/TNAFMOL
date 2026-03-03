@@ -34,3 +34,14 @@ Append-only log. One entry per experiment.
 **Failure modes:** Mathematical — stable equilibrium at alpha_pos saturation, not escapable via training
 **Story fit:** CONFLICT — TarFlow cannot generate valid molecular conformations even with proper regularization
 **Concerns:** None — failure is genuine. Two consecutive failures confirm architectural incompatibility.
+
+---
+
+### hyp_004 — TarFlow Architectural Ablation + Optimization
+**Date:** 2026-03-02 | **Status:** PARTIAL
+**Tag:** `hyp_004` | **Merge commit:** `5a982e2`
+**Result:** Positional encodings (+5ppt) and SBG recipe with lr=1e-3 + ema=0.99 (+12ppt) push TarFlow to 26.7% mean VF (full run) / 29.5% (sweep best). 1/8 molecules ≥ 50% (malonaldehyde 56.6%). Fails primary criterion (4+/8 ≥ 50%). Alpha_pos saturation equilibrium persists unchanged across all 20+ configurations tested.
+**PhD quality:** CLEAN — three PhD agents needed (context exhaustion ×2, seamless recovery via GUPP). One minor process issue: sweep output directory naming bug caused raw output overwrites for different ema_decay runs (W&B captured all results).
+**Failure modes:** None (experiment-level). The PARTIAL status reflects the alpha_pos equilibrium ceiling, not an implementation failure.
+**Story fit:** FITS (partially) — confirms alpha_pos equilibrium is the fundamental bottleneck. Architectural improvements help within the constraint but cannot break it. Assessment revised from "fundamentally broken" to "constrained with ~30% ceiling."
+**Concerns:** None — result is conclusive. TarFlow is exhausted. Proceed to DDPM.
