@@ -1,0 +1,12 @@
+{
+  "config": 4,
+  "descriptor": "T21_nonoise_shared",
+  "description": "T=21, no noise, shared scale \u2014 does shared scale help padded without noise?",
+  "best_loss": -2.784703493118286,
+  "best_step": 4914,
+  "final_loss": -2.758066177368164,
+  "valid_fraction": 0.009,
+  "nll_per_dof": -2.758066177368164,
+  "logdet_per_dof": 0.12051430896476463,
+  "n_params": 6364240
+}

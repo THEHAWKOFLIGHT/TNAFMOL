@@ -1,0 +1,11 @@
+{
+  "step": "b",
+  "description": "Atom type conditioning \u2014 nn.Embedding(4, 16) concat to input per atom",
+  "best_loss": -2.7951231002807617,
+  "best_step": 4982,
+  "final_loss": -2.7722086906433105,
+  "valid_fraction": 0.929,
+  "nll_per_dof": -2.7722086906433105,
+  "logdet_per_dof": 0.12076511436038545,
+  "n_params": 6354008
+}

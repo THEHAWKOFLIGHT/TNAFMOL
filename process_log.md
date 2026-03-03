@@ -476,3 +476,342 @@ Previous PhD agent context exhausted after:
 - The alpha_pos saturation equilibrium (loss→0.869, log_det/dof→0.100 by step 150) persists
   across all 20+ configs tested. Cannot be escaped by training recipe or architecture alone.
   Best result is 29.5% at 3000 steps (sweep). Full run 26.7%. Both far from 50%+.
+## 2026-03-02 — und_001 Phase 2: Apple TarFlow Baseline Verification
+**Branch:** `exp/und_001`
+
+### Decisions & Reasoning (INTENTION — written before execution)
+- Implementing Apple TarFlow clean re-implementation in `src/tarflow_apple.py`
+- Must match Apple reference exactly: per-dim scale, output shift autoregression, no clamping
+- Training unified script `src/train_ladder.py` for levels 0-3
+- Level 0 (2D Gaussian): seq_length=2, in_channels=1 (NOT seq_length=1 which is degenerate)
+  - seq_length=1 → output shift always returns zeros → permanent identity → no learning
+  - seq_length=2 splits (x,y) into two scalar tokens with autoregressive conditioning
+- Level 1 (MNIST): channels=256, 4 blocks × 4 layers, patch_size=4 → 49 tokens × 16 dims
+- Level 2 (CIFAR-10): channels=768, 8 blocks × 4 layers, 228M params
+  - LR reduced to 1e-4 (3e-4 caused NaN at step 8 with large model)
+  - num_workers=0 to avoid DataLoader deadlock in background process
+- All three levels run on GPUs 5, 6, 7
+
+### Results (Phase 2)
+- Level 0: DONE. Best NLL=0.91, mode coverage=88.6%, 5000 steps, 2.9 min
+- Level 1: DONE. Best NLL=-2.245, bits/dim=-3.20, converged at 14400/20000 steps
+- Level 2: RUNNING. Loss 0.13→-2.01 in 1340 steps (in progress, GPU 7 at 100%)
+
+### New Files Created
+- `src/tarflow_apple.py` — Apple TarFlow clean re-implementation (TarFlowApple + TarFlow1D)
+- `src/train_ladder.py` — unified training script for levels 0-3
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase2/level0_2d_gaussian/` — Level 0 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase2/level1_mnist/` — Level 1 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase2/level2_cifar10/` — Level 2 outputs (in progress)
+- `experiments/understanding/und_001_tarflow_diagnostic/reports/ladder_report.md` — Phase 2 report
+
+### Commits
+- `94d7677` — [und_001] code: implement Apple TarFlow clean re-implementation (tarflow_apple.py)
+- `7522813` — [und_001] code: implement unified train_ladder.py for benchmark levels 0-2
+- `85687e2` — [und_001] code: fix Level 0 to use seq_length=2 in_channels=1
+- `aaf9d19` — [und_001] code: lower CIFAR-10 lr to 1e-4 to prevent early training instability
+- `4360f13` — [und_001] code: set cifar10 num_workers=0 to prevent dataloader deadlock
+- `15c29f0` — [und_001] results: Level 0 (88.6% mode coverage) and Level 1 MNIST (-3.20 bpd) complete
+
+### Notes
+- GPU 5: Level 0 (done), GPU 6: Level 1 (done), GPU 7: Level 2 (in progress)
+- W&B runs: Level 0 = nkuogsf4, Level 1 = n8fokhe6, Level 2 = rlvxam2e
+- Level 2 at 50k steps estimated ~8.3 hours; run in background
+- Plausibility checks PASS: Level 0 loss ~6.38 at init (correct for ring data with radius=5),
+  Level 1 loss negative (expected with [-1,1] normalization + noise augmentation),
+  Level 2 rapid improvement in first 1000 steps confirms no collapse or instability
+
+---
+
+## 2026-03-02 — und_001 Phase 3: Adaptation Ladder (Steps A-F)
+**Branch:** `exp/und_001`
+
+### INTENTION (write before execute)
+- Implementing the adaptation ladder: 6 incremental steps from Apple TarFlow (raw coords) to our full molecular model
+- PURPOSE: isolate which architectural change causes performance degradation (log-det exploitation)
+- HYPOTHESIS: Step E (shared scale) is the break point — ONE scalar log_scale per atom × 3 coords gives 3× leverage on log_det exploitation vs per-dimension scale
+- Each step trains from SCRATCH on ethanol (9 real atoms, 444k train samples) for 5000 steps
+- After all steps: write adaptation_report.md identifying the degradation point
+
+**Step plan:**
+- Step A: TarFlow1D on raw 9 ethanol atoms — pure Apple architecture, no modifications
+- Step B: Add atom type conditioning (nn.Embedding 4→16, concat to input)
+- Step C: Add padding (21 atoms) + causal+padding attention mask
+- Step D: Add Gaussian noise augmentation (sigma=0.05 to real atoms only)
+- Step E: Switch to shared scale — ONE scalar per atom applied to all 3 coords (KEY TEST)
+- Step F: Add stabilization (asymmetric clamp alpha_pos=0.1 + log_det_reg_weight=0.01)
+
+**Architecture for Step A:**
+- TarFlow1D: seq_length=9, in_channels=3 (raw xyz per atom)
+- channels=256, num_blocks=4, layers_per_block=2, head_dim=64
+- Apple loss: 0.5 * z.pow(2).mean() - logdets.mean()
+- NO clamping, NO log-det reg, NO noise, NO padding
+
+**Key insight being tested:**
+- Apple uses per-DIMENSION scale: xa shape (B, T, 3), log_det = -xa.mean([1,2])
+  → 3 independent scale params per atom, each contributing 1/3 to log_det per dof
+- Our model uses shared scale: 1 scalar per atom applied to all 3 coords, log_det = -3*s.mean([1,2])
+  → Same scalar × 3 means the optimizer gets 3× more benefit per unit of log_scale exploitation
+  → This concentration of influence per parameter is what we hypothesize causes the saturation equilibrium
+
+**MetaBlock modification for shared scale (Step E):**
+- MetaBlock proj_out produces in_channels*2 = 6 dims for NVP (xa=3 dims, xb=3 dims)
+- For shared scale: proj_out produces in_channels+1 = 4 dims (xa=1 shared scalar, xb=3 shift)
+- Forward: z = (x - xb) * exp(-xa.expand_as(x)); log_det = -xa.mean([1,2]) * 3
+- This requires modifying MetaBlock or creating a variant
+
+**Implementation plan:**
+- New file: src/train_phase3.py — unified runner for all 6 steps
+- New classes: MetaBlockSharedScale, TarFlow1DSharedScale for Step E
+- TarFlow1DMol for Steps B-F: extends TarFlow1D with atom type conditioning
+- Each step's model defined in train_phase3.py (no separate files per step)
+
+### New Files to be Created
+- `src/train_phase3.py` — Phase 3 adaptation ladder training script
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase3/step_a_raw_coords/`
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase3/step_b_atom_type/`
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase3/step_c_padding_mask/`
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase3/step_d_noise_aug/`
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase3/step_e_shared_scale/`
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase3/step_f_stabilization/`
+- `experiments/understanding/und_001_tarflow_diagnostic/reports/adaptation_report.md`
+
+### Commits (planned)
+- `[und_001] code: implement Phase 3 adaptation ladder (train_phase3.py)`
+- `[und_001] results: Phase 3 step_a complete`
+- `[und_001] results: Phase 3 step_b complete`
+- `[und_001] results: Phase 3 step_c complete`
+- `[und_001] results: Phase 3 step_d complete`
+- `[und_001] results: Phase 3 step_e complete (KEY TEST)`
+- `[und_001] results: Phase 3 step_f complete`
+- `[und_001] docs: adaptation_report.md`
+
+---
+
+## 2026-03-02 (session continuation) — Phase 3 pre-flight + CIFAR-10 monitoring
+**Branch:** `exp/und_001`
+
+### INTENTION (written before action)
+Context was restored after previous session ran out. Level 2 CIFAR-10 is still running (PID 1282962, GPU 7, step 3000+). In this session: verify Phase 3 script (train_phase3.py) is bug-free before CIFAR-10 finishes, so Phase 3 can begin immediately after Phase 2.
+
+### Decisions & Reasoning
+- Verified CIFAR-10 run healthy: step 3000 at 21:41, loss=-2.02, GPU at 87% utilization
+- Committed Level 2 config.json and interim samples.png (step 1340 → already committed earlier; same file)
+- Updated .state.json with step 2000 progress marker
+- Ran end-to-end sanity tests for all 6 Phase 3 steps (A-F) on CPU with 5 training steps each
+- **Found and fixed bug in train_phase3.py**: attention mask shape `(B, T, T)` must be `(B, 1, T, T)` for `F.scaled_dot_product_attention` to broadcast over num_heads. Bug affected Steps C, D, E, F (all that use padding mask). Fixed by adding `.unsqueeze(1)` in both `MetaBlockWithCond.forward` and `MetaBlockSharedScale.forward`.
+- All 6 steps pass CPU sanity tests after fix.
+
+### Verification
+- Step A: best_loss=0.043 (5 steps, CPU) ✓
+- Step B: best_loss=0.118 ✓
+- Step C: best_loss=0.254 ✓  (previously failed with RuntimeError: size mismatch dim 1)
+- Step D: best_loss=0.222 ✓
+- Step E: best_loss=0.281 ✓
+- Step F: best_loss=0.292 ✓
+
+### New Files Created
+- `finalize_level2.sh` — shell script to commit Level 2 final results after training completes
+
+### Commits
+- `00d27f5` — [und_001] config: Level 2 CIFAR-10 config + .state.json progress update (step 2000, loss=-2.00)
+- `34fd7dd` — [und_001] code: fix attention mask broadcasting bug in train_phase3.py (B,T,T) → (B,1,T,T)
+
+### Notes
+- Level 2 CIFAR-10 expected to complete in ~7 more hours from 21:40 PST (March 2)
+- Phase 3 steps A-F can begin immediately after Level 2 completes
+- Phase 3 will run steps in parallel: each step 5000 steps on a single GPU (cuda:5 or :6)
+- The KEY TEST is Step E (shared scale) — expect significant degradation vs. Step A (per-dim scale)
+
+## 2026-03-02 (context restored) — Phase 3 Step C NaN fix + GPU runs
+**Branch:** `exp/und_001`
+
+### INTENTION (written before action)
+Previous context ran out mid-debugging. Step C was producing NaN from step 9 onwards. Steps A and B completed successfully. This session: diagnose root cause of Step C NaN, fix it, run all remaining steps (C-F).
+
+### Decisions & Reasoning
+- **Root cause of Step C NaN**: Found via diagnostic: at step 9, z_max = 2.6e23 (overflow). The model weights were NOT yet NaN when loss was computed — z itself was overflowing.
+  - First fix attempt (zero xa/xb for padding): partially correct but missed a critical detail.
+  - **Actual root cause**: PermutationFlip (used in even-numbered blocks) reverses token order. The padding mask was applied in ORIGINAL token order (atoms 0-8 real, 9-20 padding), but after PermutationFlip the order is reversed (atoms 20-12 real in new positions 0-8, atoms 11-0 padding in positions 9-20). Zeroing xa/xb using the original mask was zeroing REAL atoms in PermutationFlip blocks and leaving PADDING positions unconstrained — exactly backwards!
+  - **Fix**: Permute padding_mask the same way as x before using it to zero xa/xb and build the attention mask. `mask_perm = permutation(padding_mask.unsqueeze(-1)).squeeze(-1)`.
+  - Verified: 20-step diagnostic shows stable loss descent, z_max < 5.2 throughout.
+- Also changed logdet normalization in padded blocks from T*D to n_real*D to match get_loss z² normalization (per real dof). This ensures NLL is balanced and not artificially deflated by the padding tokens.
+- Also changed the assert to a soft warning: skip NaN steps rather than crash, so skipping batch anomalies doesn't kill the run.
+
+### New Files Created
+- None (only modified `src/train_phase3.py`)
+
+### Commits
+- `901d6c5` — [und_001] code: fix permutation-aware padding mask in MetaBlockWithCond and MetaBlockSharedScale
+
+---
+
+## 2026-03-02 (session 3) — Phase 3 Steps C-F completion
+**Branch:** `exp/und_001`
+
+### INTENTION (written before action)
+Context restored from summary. Continuing from mid-debug of NaN in Steps C-F. n_real normalization fix was in place (commit 901d6c5). Previous session analyzed equilibrium math but didn't confirm if the fix worked. This session: verify fix works, complete all Phase 3 steps, collect results.
+
+### Decisions & Reasoning
+- **Discovered Step F already completed** (from a prior background run at 21:49 PST): loss=-3.047, VF=0.0. Step F uses clamping+regularization which prevents NaN but results in saturation equilibrium. The asymmetric clamp (alpha_neg=2.0) limits scale to exp(2.0)≈7.4× max, which prevents log-det explosion but the model doesn't learn the distribution — stuck in near-identity transform.
+- **Step C was running successfully** (PID 1304900) at step 1700, loss=-2.17 when session began. The 901d6c5 fix (permutation-aware padding mask + n_real normalization) worked.
+- **Accident**: killed PID 1306820 thinking it was a duplicate Step C, but it was actually a DataLoader worker for the ORIGINAL Step C run. This caused Step C to crash at step 4200 (checkpoint saved at step 4182, best_loss=-2.747). Cleared the directory and relaunched Step C fresh.
+- **Step D and E ran successfully**: both completed without NaN using 901d6c5 code.
+- **Decided to relaunch Step C from scratch** (not from checkpoint) since the evaluation and plots were not generated in the crashed run.
+- **Did not change lr for Steps C-F**: the n_real normalization fix alone was sufficient to prevent NaN at lr=5e-4. Earlier Adam overshoot hypothesis was incorrect — the permutation-aware mask was the real fix.
+
+### Key Results (Phase 3 Complete)
+
+| Step | Description | best_loss | VF | logdet/dof |
+|------|-------------|-----------|-----|-----------|
+| A | Raw coords, no padding | -2.827 | 89.1% | 0.122 |
+| B | + Atom type conditioning | -2.795 | 92.9% | 0.121 |
+| C | + Padding (T=21, n_real=9) | -2.825 | 2.7% | 0.122 |
+| D | + Noise augmentation | -1.902 | 14.3% | 0.088 |
+| E | Shared scale (KEY TEST) | -1.892 | 40.2% | 0.088 |
+| F | + Stabilization (clamp+reg) | -3.047 | 0.0% | 0.113 |
+
+**Interpretation**:
+1. **Padding is the primary failure point** (Step C: 89% → 2.7% VF). Adding 12 padding atoms to 9 real atoms collapses valid fraction dramatically, even though the architecture handles padding correctly via masking.
+2. **Noise augmentation partially recovers** (Step D: 2.7% → 14.3%). The noise sigma=0.05 smooths the distribution enough to help with pairwise distance validity.
+3. **Shared scale IMPROVES over per-dim with noise** (Step E vs D: 14.3% → 40.2%). This is the opposite of the expected result. The shared scale does NOT cause saturation in our diagnostic setting — the normalization fix resolved that issue. The improvement suggests shared scale may have better inductive bias for molecular coords (same scaling for all 3 spatial dims, which respects isotropy).
+4. **Clamping destroys performance** (Step F: 40.2% → 0.0%). The asymmetric clamping prevents the model from learning the necessary scale transformations. The clamping is too tight (alpha_pos=0.1 → max scale contraction = exp(-0.1) ≈ 0.905).
+5. **Loss magnitude vs VF are decoupled**: Steps C and A have similar best_loss (-2.83 vs -2.83) but radically different VF (2.7% vs 89.1%). The NLL doesn't capture pairwise distance validity. Loss alone is insufficient to diagnose molecular structure quality.
+
+### New Files Created
+- `reports/phase3_report.md` — detailed Phase 3 step-by-step analysis with figures and interpretation
+- `reports/final_report.md` — final experiment report for Postdoc synthesis
+
+### Commits
+- `3fbf7f1` — [und_001] results: Phase 3 Steps C-E complete; docs updated
+- `05da6e1` — [und_001] results: Step F complete (VF=10.4%); corrected docs
+
+## 2026-03-02 (session 4, context restored) — Phase 3 final cleanup + adaptation_report
+**Branch:** `exp/und_001`
+
+### INTENTION
+Context restored after session 3 ran out. Steps C, D, E already complete per process_log session 3.
+Step F needed re-run (old run used buggy code git_hash=09c565f). This session:
+1. Verified Step F was from old code → cleared and re-ran Step F (new code, commit 901d6c5)
+2. Wrote adaptation_report.md (final deliverable)
+3. Updated experiment_log.md with und_001 Phase 3 entry
+4. Final commits
+
+### Decisions & Reasoning
+- Step F re-run confirmed: VF=10.4%, loss=-1.857 (vs old buggy VF=0.0, loss=-3.047)
+- Clamping+reg reduces VF from 40.2% (Step E) to 10.4% — clamping is too tight
+- adaptation_report.md written as canonical final report for the ladder
+
+### New Files Created
+- `experiments/understanding/und_001_tarflow_diagnostic/reports/adaptation_report.md`
+
+### Commits
+- (see git log for final commits after this entry)
+
+---
+
+## 2026-03-02 — Phase 4 Ablation Matrix
+**Branch:** `exp/und_001`
+
+### INTENTION (written before action)
+Phase 3 established that padding is the primary VF failure mode (B: 92.9% → C: 2.7%). Phase 4 fills in the systematic 2×2×2 crossing to quantify each factor's contribution, sweep the padding amount, test augmentation strategies, and answer 5 key questions about the architecture.
+
+Plan (written before execution):
+- 9 configs: T×noise×scale crossing (configs 1-4), padding sweep (5-6), augmentation (7-8), clamp-without-padding (9)
+- Run 2 configs at a time in parallel on GPUs 5 and 6 (CUDA_VISIBLE_DEVICES=5 and 6)
+- 5000 steps each, same hyperparams as Phase 3 base
+- Expected key finding: T=9 configs should all be ~90-95%; padding sweep should show smooth decline
+
+### Decisions & Reasoning
+- Implemented `src/train_phase4.py` importing core classes from `train_phase3.py` to avoid code duplication
+- Added `permute_atoms()` function for permutation augmentation (shuffles real atom order per batch)
+- SO(3) augmentation uses existing `augment_positions()` from `src/data.py`
+- For T=12 and T=15 (configs 5, 6): create custom mask of length T (9 ones + padding zeros), slice positions to T atoms from the full 21-atom dataset
+- Ran quick sanity test (50 steps) for config 3 before launching full runs — all metrics finite, W&B connected ✓
+- Ran configs in order: (1,2), (3,4), (5,6), (7,8), (9) — 2 at a time to respect GPU limits
+
+### Key Results (Phase 4 Complete)
+
+| Config | Descriptor | VF | logdet/dof | Final loss |
+|--------|-----------|-----|-----------|------------|
+| 1 | T=9, no-noise, shared | 93.6% | 0.120 | -2.74 |
+| 2 | T=9, noise, per-dim | **96.2%** | 0.088 | -1.88 |
+| 3 | T=9, noise, shared | 95.3% | 0.087 | -1.87 |
+| 4 | T=21, no-noise, shared | 0.9% | 0.121 | -2.76 |
+| 5 | T=12 (3 pad), noise, shared | 69.6% | 0.088 | -1.86 |
+| 6 | T=15 (6 pad), noise, shared | 50.4% | 0.088 | -1.86 |
+| 7 | T=21, noise, shared+perm | 2.1% | 0.063 | -1.19 |
+| 8 | T=21, noise, shared+SO3 | 34.8% | 0.059 | -1.10 |
+| 9 | T=9, noise, shared+clamp | 93.4% | 0.087 | -1.87 |
+
+### Plausibility Checks (passed before reporting)
+- T=9 configs all in 93-96% range as predicted — consistent with Phase 3 steps A/B ✓
+- Config 4 (T=21, no noise, shared) at 0.9% — worse than Step C (2.7%), because shared scale without noise accelerates collapse ✓
+- Padding sweep (configs 5, 6): smooth monotonic decline 95.3% → 69.6% → 50.4% → 40.2% as T increases ✓
+- Permutation augmentation catastrophic (2.1%) — expected, architecturally incompatible with causal flows ✓
+- Config 9 (T=9, clamp) near-identical to config 3 (T=9, no clamp): 93.4% vs 95.3% — clamp is near-neutral without padding ✓
+- Loss values all finite, no NaN events reported in any config ✓
+
+### New Files Created
+- `src/train_phase4.py` — Phase 4 ablation matrix training script
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/config_1_T9_nonoise_shared/` — config 1 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/config_2_T9_noise_perdim/` — config 2 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/config_3_T9_noise_shared/` — config 3 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/config_4_T21_nonoise_shared/` — config 4 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/config_5_T12_noise_shared/` — config 5 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/config_6_T15_noise_shared/` — config 6 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/config_7_T21_noise_shared_permaug/` — config 7 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/config_8_T21_noise_shared_so3aug/` — config 8 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/config_9_T9_noise_shared_clamp/` — config 9 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/summary_all_configs.png` — summary bar chart
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/padding_sweep_and_factors.png` — padding sweep + factor effects
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/crossing_heatmap.png` — 2×2×2 heatmap
+- `experiments/understanding/und_001_tarflow_diagnostic/reports/ablation_report.md` — full ablation analysis
+
+### Commits
+- (see git log for commits after this entry)
+
+---
+
+## 2026-03-02 — und_001 Phase 5: Best Config on All 8 MD17 Molecules
+**Branch:** `exp/und_001`
+
+### Decisions & Reasoning
+- Phase 4 confirmed padding as primary failure mode. T=9 configs achieve 93-96% VF; T=21 best is 40.2%.
+- Phase 5 extends the two best configs to all 8 molecules to measure: (A) ceiling without padding, (B) practical padded multi-molecule performance.
+- Config A: T=n_real (no padding), per-dim scale, noise=0.05 — best performing T=n_real combination from Phase 4 (config 2: 96.1%).
+- Config B: T=21 (padded), shared scale, noise=0.05 — best performing padded combination from Phase 3/4 (step E: 40.2%).
+- Both configs: atom type embedding, no clamping, 5000 steps, same hyperparams as Phase 3/4.
+- For Config A, slice positions to first n_real atoms from dataset (strips padding before forward pass).
+- For Config B, use dataset as-is (21-atom format with mask).
+- Aspirin has n_real=21 — Config A and Config B are IDENTICAL for aspirin (no padding either way). This serves as a sanity check.
+- Wrote intention to process_log BEFORE running any experiments.
+- Runs are parallelized: GPU5 handles Config A molecules, GPU6 handles Config B molecules (batched sequentially).
+
+### New Files Created
+- `src/train_phase5.py` — Phase 5 training script (Config A and B, all molecules)
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase5/` — results directory
+- `reports/phase5_report.md` — full Phase 5 analysis (written after runs complete)
+
+### Results Summary
+| Molecule | n_real | Config A VF | Config B VF |
+|----------|--------|-------------|-------------|
+| aspirin | 21 | 94.3% | 93.2% |
+| naphthalene | 18 | 100.0% | 0.0% |
+| salicylic_acid | 16 | 97.8% | 8.1% |
+| toluene | 15 | 98.7% | 0.0% |
+| benzene | 12 | 100.0% | 2.9% |
+| uracil | 12 | 99.2% | 6.9% |
+| ethanol | 9 | 96.2% | 40.2% |
+| malonaldehyde | 9 | 99.8% | 15.4% |
+| **Mean** | — | **98.2%** | **20.8%** |
+
+### Key Findings
+- Config A ceiling: 98.2% mean VF — architecture works without padding
+- Config B: 20.8% mean VF — beats hyp_003 (18.3%)
+- Aspirin sanity check passed: no padding → Config A ≈ Config B (94.3% vs 93.2%)
+- Phase 4 linear model overestimates for aromatic molecules (naphthalene, toluene collapse to 0%)
+
+### Commits
+- e897f5c — [und_001] code: add train_phase5.py — best config validation on all 8 MD17 molecules
+- (results commit pending)

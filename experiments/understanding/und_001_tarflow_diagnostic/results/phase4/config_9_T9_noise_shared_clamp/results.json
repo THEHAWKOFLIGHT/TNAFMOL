@@ -1,0 +1,12 @@
+{
+  "config": 9,
+  "descriptor": "T9_noise_shared_clamp",
+  "description": "T=9, noise, shared + clamp (alpha_pos=0.1) \u2014 no-padding clamping test",
+  "best_loss": -1.8812631368637085,
+  "best_step": 4689,
+  "final_loss": -1.868880271911621,
+  "valid_fraction": 0.934,
+  "nll_per_dof": -1.868880271911621,
+  "logdet_per_dof": 0.08729811076764708,
+  "n_params": 6351952
+}

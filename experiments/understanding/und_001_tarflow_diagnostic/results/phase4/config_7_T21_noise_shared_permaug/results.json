@@ -1,0 +1,12 @@
+{
+  "config": 7,
+  "descriptor": "T21_noise_shared_permaug",
+  "description": "T=21, noise, shared + permutation augmentation",
+  "best_loss": -1.2347512245178223,
+  "best_step": 4727,
+  "final_loss": -1.1943267583847046,
+  "valid_fraction": 0.021,
+  "nll_per_dof": -1.1943267583847046,
+  "logdet_per_dof": 0.06294652144114175,
+  "n_params": 6364240
+}

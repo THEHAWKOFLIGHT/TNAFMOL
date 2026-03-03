@@ -1,0 +1,11 @@
+{
+  "step": "d",
+  "description": "Gaussian noise augmentation \u2014 sigma=0.05 to real atoms during training",
+  "best_loss": -1.9015454053878784,
+  "best_step": 4942,
+  "final_loss": -1.8672183752059937,
+  "valid_fraction": 0.143,
+  "nll_per_dof": -1.8672183752059937,
+  "logdet_per_dof": 0.08770973629421659,
+  "n_params": 6366296
+}

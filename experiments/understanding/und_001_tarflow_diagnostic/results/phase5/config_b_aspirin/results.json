@@ -1,0 +1,13 @@
+{
+  "molecule": "aspirin",
+  "config": "B",
+  "n_real": 21,
+  "seq_length": 21,
+  "pad_fraction": 0.0,
+  "best_loss": -1.7951585054397583,
+  "best_step": 4874,
+  "final_loss": -1.7816064357757568,
+  "valid_fraction": 0.932,
+  "logdet_per_dof": 0.03619919697443645,
+  "n_params": 6364240
+}

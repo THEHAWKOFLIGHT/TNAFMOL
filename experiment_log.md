@@ -183,3 +183,124 @@ Downloaded and preprocessed all 8 MD17 molecules (aspirin, benzene, ethanol, mal
   log_det/dof→0.100 by step 150). Architectural improvements (pos_enc +5ppt) and training recipe
   (SBG + lr=1e-3 + ema=0.99: +12ppt over SANITY baseline) push performance within the constrained regime.
   The lr=1e-3 + ema=0.99 combination is a key new finding: provides 10× more improvement than architecture alone.
+## und_001 — TarFlow Diagnostic Ladder (Phase 3)
+
+**Date:** 2026-03-02
+**Branch:** `exp/und_001`
+**Type:** Understanding
+**Command:** DIAGNOSE
+
+**Goal:** Identify which architectural adaptation from Apple TarFlow to molecular TarFlow causes
+performance degradation. Run 6 incremental steps (A-F), 5000 steps each on ethanol (MD17, 9 atoms).
+
+**Steps:**
+- **A** (Baseline): Pure Apple TarFlow1D, raw coords, 9 atoms — valid_fraction=**89.1%**, loss=-2.802, logdet/dof=0.122
+- **B** (+ Atom type cond): nn.Embedding(4,16) concat — valid_fraction=**92.9%**, loss=-2.772, logdet/dof=0.121
+- **C** (+ Padding T=21): 9 real + 12 pad atoms, causal+pad mask — valid_fraction=**2.7%**, loss=-2.801, logdet/dof=0.122
+- **D** (+ Noise aug): Gaussian noise sigma=0.05 on real atoms — valid_fraction=**14.3%**, loss=-1.867, logdet/dof=0.088
+- **E** (Shared scale): 1 scalar/atom×3 coords (KEY TEST) — valid_fraction=**40.2%**, loss=-1.864, logdet/dof=0.088
+- **F** (+ Stabilization): asymmetric clamp alpha_pos=0.1 + log-det reg 0.01 — valid_fraction=**10.4%**, loss=-1.857, logdet/dof=0.087
+
+**Primary finding:** Padding is the failure point (Step C: 89.1% → 2.7%). Shared scale did NOT cause
+saturation when normalization was correct. The hyp_002/hyp_003 saturation was caused by two bugs:
+(1) self-inclusive causal mask, (2) T*D normalization instead of n_real*D.
+
+**Bugs fixed during Phase 3 debugging:**
+1. Attention mask shape: `(B,T,T)` → `(B,1,T,T)` for multi-head broadcast (commit `34fd7dd`)
+2. Permutation-aware padding mask: PermutationFlip blocks must receive the flipped mask (commit `901d6c5`)
+3. Logdet normalization: T*D → n_real*D to match z² NLL normalization (commit `901d6c5`)
+
+**W&B runs:** https://wandb.ai/kaityrusnelson1/tnafmol (group: `und_001`, prefix: `und_001_phase3_step_*`)
+
+**Story fit:** UPDATES STORY. The primary failure mechanism is different from the original hypothesis.
+Padding (not shared scale) causes VF collapse. The correct architecture direction is: reduce or eliminate
+padding by working at T=n_real, or use a different approach that doesn't suffer from degenerate
+zero-padding tokens in the autoregressive sequence.
+
+---
+
+### und_001 Phase 4 — Ablation Matrix
+**Date:** 2026-03-02
+**Branch:** `exp/und_001`
+**Command:** DIAGNOSE
+**Status:** DONE
+
+9 new configs crossing the most impactful Phase 3 factors in a systematic ablation matrix.
+All configs: ethanol, 5000 steps, batch_size=256, lr=5e-4, cosine, grad_clip=1.0, seed=42.
+Configs run in parallel (2 at a time) on GPUs 5 and 6 (physical CUDA devices).
+
+**Results:**
+
+| Config | Descriptor | Valid % |
+|--------|-----------|---------|
+| 1 | T=9, no-noise, shared | **93.6%** |
+| 2 | T=9, noise, per-dim | **96.2%** |
+| 3 | T=9, noise, shared | **95.3%** |
+| 4 | T=21, no-noise, shared | 0.9% |
+| 5 | T=12 (3 pad), noise, shared | **69.6%** |
+| 6 | T=15 (6 pad), noise, shared | **50.4%** |
+| 7 | T=21, noise, shared + perm-aug | 2.1% |
+| 8 | T=21, noise, shared + SO(3)-aug | 34.8% |
+| 9 | T=9, noise, shared + clamp | **93.4%** |
+
+**Key findings:**
+1. Best achievable VF: **96.2%** (config 2: T=9, noise, per-dim). All T=9 configs = 93-96%.
+2. Padding degrades VF smoothly: ~−96 pp per unit pad_fraction (T=9: 95.3% → T=12: 69.6% → T=15: 50.4% → T=21: 40.2%). NOT a cliff.
+3. Permutation augmentation is catastrophically harmful (2.1%) — architecturally incompatible with causal autoregressive flows.
+4. SO(3) augmentation modestly harmful in padded regime (−5.4 pp vs baseline).
+5. Clamping is neutral without padding (−1.9 pp), harmful only with padding (−29.8 pp with T=21).
+6. Noise × shared scale interaction: large positive synergy in padded regime (+39.3 pp joint vs +11.6 pp noise alone).
+7. No intervention tested recovers padding-induced VF loss at T=21.
+
+**Architectural conclusion:** The padding gradient imbalance in the log-det objective is the root cause.
+An architectural fix is needed (e.g., per-sample n_real normalization, or abandoning the padded sequence format).
+
+**W&B runs:** https://wandb.ai/kaityrusnelson1/tnafmol (group: `und_001`, prefix: `und_001_phase4_config*`)
+
+**Story fit:** CONFIRMS Phase 3 finding. Padding is the primary obstacle. No augmentation or regularization
+strategy tested can overcome the fundamental padding gradient imbalance.
+
+---
+
+## Phase 5 — Best Config Validation on All 8 MD17 Molecules
+
+**Date:** 2026-03-02
+**Branch:** `exp/und_001`
+**Status:** DONE
+**Type:** Understanding / DIAGNOSE
+
+**Purpose:** Extend the two best configs from Phase 4 to all 8 MD17 molecules to measure:
+(A) architecture ceiling when padding is removed (T=n_real), and
+(B) practical multi-molecule performance at T=21 with the best-known padded config.
+
+**Configs run:**
+- Config A: T=n_real (no padding), per-dim scale, noise=0.05, atom type embedding, 5000 steps
+- Config B: T=21 (padded), shared scale, noise=0.05, atom type embedding, 5000 steps
+- 8 molecules × 2 configs = 16 total runs on GPUs 5 (Config A) and 6 (Config B) in parallel
+
+**Results:**
+| Molecule | n_real | Config A VF | Config B VF | pad_frac_B |
+|----------|--------|-------------|-------------|------------|
+| aspirin | 21 | 94.3% | 93.2% | 0.000 |
+| naphthalene | 18 | 100.0% | 0.0% | 0.143 |
+| salicylic_acid | 16 | 97.8% | 8.1% | 0.238 |
+| toluene | 15 | 98.7% | 0.0% | 0.286 |
+| benzene | 12 | 100.0% | 2.9% | 0.429 |
+| uracil | 12 | 99.2% | 6.9% | 0.429 |
+| ethanol | 9 | 96.2% | 40.2% | 0.571 |
+| malonaldehyde | 9 | 99.8% | 15.4% | 0.571 |
+| **Mean** | — | **98.2%** | **20.8%** | — |
+
+**Key findings:**
+- Config A (no padding): 98.2% mean VF across all 8 molecules — architecture ceiling is very high
+- Config B (padded, T=21): 20.8% mean VF — beats hyp_003 best (18.3%) with noise + shared scale
+- Aspirin Config A ≈ Config B (94.3% vs 93.2%) — expected, aspirin has n_real=21 = T, no padding
+- Phase 4 linear model (VF = 95.3% - 96.4%×pad_frac) overestimates for non-ethanol molecules
+- Naphthalene and toluene collapse to 0% despite small padding fractions (14%, 29%)
+
+**Plausibility checks:** All pass. Ethanol Config B = 40.2% matches Phase 3 Step E exactly (reproducible). No NaN events.
+
+**W&B runs:** https://wandb.ai/kaityrusnelson1/tnafmol (group: `und_001`, prefix: `und_001_phase5_config*`)
+16 runs: 8 Config A (configA_*) + 8 Config B (configB_*) under group und_001
+
+**Story fit:** FITS — confirms padding as primary failure mode. Architecture itself is sound (98.2% ceiling). Config B improvement over hyp_003 is consistent with Phase 3/4 established best practices.

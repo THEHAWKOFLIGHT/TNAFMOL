@@ -1,0 +1,12 @@
+{
+  "config": 5,
+  "descriptor": "T12_noise_shared",
+  "description": "T=12 (3 pad), noise, shared \u2014 minimal padding",
+  "best_loss": -1.8878169059753418,
+  "best_step": 4750,
+  "final_loss": -1.8639914989471436,
+  "valid_fraction": 0.696,
+  "nll_per_dof": -1.8639914989471436,
+  "logdet_per_dof": 0.08760500731291593,
+  "n_params": 6355024
+}

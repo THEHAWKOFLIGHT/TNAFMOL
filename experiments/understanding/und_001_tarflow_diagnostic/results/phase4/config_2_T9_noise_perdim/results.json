@@ -1,0 +1,12 @@
+{
+  "config": 2,
+  "descriptor": "T9_noise_perdim",
+  "description": "T=9, noise(\u03c3=0.05), per-dim scale \u2014 noise effect without padding",
+  "best_loss": -1.8892226219177246,
+  "best_step": 4525,
+  "final_loss": -1.877685308456421,
+  "valid_fraction": 0.962,
+  "nll_per_dof": -1.877685308456421,
+  "logdet_per_dof": 0.08763953985991302,
+  "n_params": 6354008
+}

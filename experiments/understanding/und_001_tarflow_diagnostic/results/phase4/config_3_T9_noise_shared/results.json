@@ -1,0 +1,12 @@
+{
+  "config": 3,
+  "descriptor": "T9_noise_shared",
+  "description": "T=9, noise(\u03c3=0.05), shared scale \u2014 best-case without padding",
+  "best_loss": -1.8820773363113403,
+  "best_step": 4929,
+  "final_loss": -1.8678532838821411,
+  "valid_fraction": 0.953,
+  "nll_per_dof": -1.8678532838821411,
+  "logdet_per_dof": 0.08732301455956919,
+  "n_params": 6351952
+}

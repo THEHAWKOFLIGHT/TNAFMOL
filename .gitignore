@@ -33,3 +33,11 @@ slurm_*.err
 # OS artifacts
 .DS_Store
 Thumbs.db
+
+# Training log files (stdout redirects — ephemeral)
+*.log
+
+# Session and launch scripts
+und_001_session.log
+launch_postdoc.sh
+.postdoc_brief.md

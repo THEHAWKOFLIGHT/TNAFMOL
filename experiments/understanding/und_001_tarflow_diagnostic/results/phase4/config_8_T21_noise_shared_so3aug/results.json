@@ -1,0 +1,12 @@
+{
+  "config": 8,
+  "descriptor": "T21_noise_shared_so3aug",
+  "description": "T=21, noise, shared + SO(3) + CoM augmentation",
+  "best_loss": -1.1217553615570068,
+  "best_step": 4596,
+  "final_loss": -1.0982179641723633,
+  "valid_fraction": 0.348,
+  "nll_per_dof": -1.0982179641723633,
+  "logdet_per_dof": 0.0592267667805707,
+  "n_params": 6364240
+}
