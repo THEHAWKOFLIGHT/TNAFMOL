@@ -1,0 +1,101 @@
+{
+  "exp_id": "und_001",
+  "type": "understanding",
+  "command": "DIAGNOSE",
+  "size": "Large",
+  "status": "pending",
+  "machine": null,
+  "artifacts": {},
+  "steps": [
+    {
+      "name": "source_comparison",
+      "status": "pending",
+      "acceptance": "Source comparison report completed documenting every architectural difference between Apple TarFlow and our model.py, with severity assessment. Zero unresolved differences marked 'unknown impact'.",
+      "result": null
+    },
+    {
+      "name": "phase2_2d_gaussian",
+      "status": "pending",
+      "acceptance": "Apple TarFlow trained on 2D 8-mode Gaussian mixture. Clean samples matching 8-mode density. Loss curve + sample scatter plot saved.",
+      "result": null
+    },
+    {
+      "name": "phase2_mnist",
+      "status": "pending",
+      "acceptance": "Apple TarFlow trained on MNIST. bits/dim < 1.5, recognizable digit samples. Loss curve + sample grid saved.",
+      "result": null
+    },
+    {
+      "name": "phase2_cifar10",
+      "status": "pending",
+      "acceptance": "Apple TarFlow trained on CIFAR-10. bits/dim < 3.5, recognizable image samples. Loss curve + sample grid saved.",
+      "result": null
+    },
+    {
+      "name": "phase3_step_a_swap_patches",
+      "status": "pending",
+      "acceptance": "Apple architecture adapted: raw (x,y,z) per atom input, per-dimension scale (3 scales per atom), Apple loss (no clamping/reg). Trained on ethanol 5000 steps. Valid_fraction, NLL/dof, log_det/dof reported.",
+      "result": null
+    },
+    {
+      "name": "phase3_step_b_type_conditioning",
+      "status": "pending",
+      "acceptance": "Atom type embeddings concatenated to position input. 5000 steps on ethanol. Impact on valid_fraction documented.",
+      "result": null
+    },
+    {
+      "name": "phase3_step_c_variable_size",
+      "status": "pending",
+      "acceptance": "Padding + attention masking for variable atom counts. Ethanol padded to 21 atoms. 5000 steps. Masking impact documented.",
+      "result": null
+    },
+    {
+      "name": "phase3_step_d_noise_augmentation",
+      "status": "pending",
+      "acceptance": "Gaussian noise sigma=0.05 on atomic coordinates during training. 5000 steps on ethanol. Impact documented.",
+      "result": null
+    },
+    {
+      "name": "phase3_step_e_shared_scale",
+      "status": "pending",
+      "acceptance": "Per-dimension scale replaced with 1 shared scale (our style). 5000 steps on ethanol. Valid_fraction compared to Step A. KEY TEST: does shared scale cause saturation equilibrium?",
+      "result": null
+    },
+    {
+      "name": "phase3_step_f_stabilization",
+      "status": "pending",
+      "acceptance": "Add asymmetric clamping + log-det regularization. 5000 steps on ethanol. Compare with/without per-dim scale.",
+      "result": null
+    },
+    {
+      "name": "phase4_ablation_matrix",
+      "status": "pending",
+      "acceptance": "Targeted crossing of most impactful factors from Phase 3. ~10-15 configs, 5000 steps each on ethanol. Results table + per-factor effect sizes.",
+      "result": null
+    },
+    {
+      "name": "phase5_best_config_validation",
+      "status": "pending",
+      "acceptance": "Best config from Phase 4 tested on all 8 MD17 molecules. Valid_fraction scaling with molecule size reported. Compared against hyp_003 best (18.3%).",
+      "result": null
+    },
+    {
+      "name": "phase6_synthesis",
+      "status": "pending",
+      "acceptance": "Final synthesis answering: where does performance degrade, which adaptation matters most, is failure architectural or fundamental, recommended next experiment.",
+      "result": null
+    },
+    {
+      "name": "source_integration",
+      "status": "pending",
+      "acceptance": "Any reusable code (tarflow_apple.py, train_ladder.py) promoted to src/. Experiment directory cleaned.",
+      "result": null
+    },
+    {
+      "name": "merge_and_tag",
+      "status": "pending",
+      "acceptance": "Branch merged to main, tagged und_001. Docs updated.",
+      "result": null
+    }
+  ]
+}
