@@ -1,0 +1,11 @@
+{
+  "step": "c",
+  "description": "Padding + attention masking \u2014 21 atoms, causal+padding attention mask",
+  "best_loss": -2.825042247772217,
+  "best_step": 4942,
+  "final_loss": -2.8010141849517822,
+  "valid_fraction": 0.027,
+  "nll_per_dof": -2.8010141849517822,
+  "logdet_per_dof": 0.12183696031570435,
+  "n_params": 6366296
+}

@@ -13,7 +13,7 @@ Six-phase diagnostic ladder:
 5. **Best Config Validation** — test best config on all 8 MD17 molecules
 6. **Synthesis** — where does it break, why, and what to do next
 
-### Results (Phase 1 + Phase 2 complete; Phases 3-6 pending)
+### Results (Phases 1-3 complete; Phases 4-6 pending)
 
 **Phase 1 — Source Comparison:** Complete. 13 differences documented between Apple TarFlow and
 our hyp_002/hyp_003 implementation. Critical differences: (1) shared vs. per-dim scale, (2) SOS
@@ -26,11 +26,24 @@ See `reports/source_comparison.md`.
 |-------|---------|-----------|--------|
 | 0 | 2D 8-mode Gaussian | 88.6% mode coverage, NLL=0.91 | DONE |
 | 1 | MNIST 1×28×28 | -3.20 bits/dim (14400 steps, converged) | DONE |
-| 2 | CIFAR-10 3×32×32 | -2.01 NLL @ step 1340 (in progress) | RUNNING |
+| 2 | CIFAR-10 3×32×32 | -2.01 NLL @ step 1340 (in progress) | RUNNING (will be updated when complete) |
 
 Apple TarFlow verified working across the complexity ladder. Architecture trains correctly
 with per-dim scale, output shift autoregression, and no clamping/regularization.
 See `reports/ladder_report.md`.
+
+**Phase 3 — Adaptation Ladder (ethanol, 5000 steps each):**
+
+| Step | Description | best_loss | VF | logdet/dof |
+|------|-------------|-----------|-----|-----------|
+| A | Raw coords, 9 atoms, no padding | -2.827 | 89.1% | 0.122 |
+| B | + Atom type conditioning (emb dim=16) | -2.795 | 92.9% | 0.121 |
+| C | + Padding (T=21, n_real=9) | -2.825 | 2.7% | 0.122 |
+| D | + Noise augmentation (sigma=0.05) | -1.902 | 14.3% | 0.088 |
+| E | Shared scale (1 scalar/atom, KEY TEST) | -1.892 | 40.2% | 0.088 |
+| F | + Stabilization (clamp alpha=0.1/2.0 + reg=0.01) | -3.047 | 0.0% | 0.113 |
+
+See `results/phase3/step_*/results.json` for full results.
 
 ### Interpretation
 
@@ -39,10 +52,39 @@ and trains successfully on 2D, MNIST, and CIFAR-10 data. The critical failures i
 were due to (1) shared isotropic scale instead of per-dim scale, and (2) a causal masking bug
 (SOS token with self-inclusive mask → non-triangular Jacobian). Apple's design avoids both.
 
-Phase 3 (Adaptation Ladder) will now test what happens when we apply this architecture to
-molecular conformations, isolating each adaptation step: atom type conditioning, variable-length
-sequences, and the physical coordinate space.
+Phase 3 reveals the molecular adaptation failure cascade:
+
+1. **Padding (Step C) is the primary failure point.** Adding 12 padding atoms to ethanol's 9 collapses
+   valid fraction from 89.1% to 2.7%, despite correct attention masking and logdet normalization.
+   The model correctly learns the NLL objective (best_loss=-2.825, same as Step A) but produces
+   invalid structures. The flow learns a latent space that maps to valid NLL but not to physically
+   valid coordinates. This is the fundamental problem.
+
+2. **Noise augmentation partially recovers** (2.7% → 14.3%). Smoothing the density with sigma=0.05
+   helps the flow generalize away from training configurations.
+
+3. **Shared scale IMPROVES over per-dim scale WITH noise** (40.2% vs 14.3%). This is contrary to
+   the original hypothesis. With correct normalization (n_real*D), shared scale does not cause
+   saturation exploitation. The improvement may reflect shared scale's inductive bias toward
+   isotropic coordinate scaling — appropriate for 3D molecular coordinates.
+
+4. **Clamping destroys performance** (0.0% VF). Tight alpha_pos=0.1 prevents the model from
+   learning necessary scale transformations. The clamping was designed for shared scale exploitation
+   in hyp_002/hyp_003 but is too restrictive when the base model works correctly.
+
+5. **Loss and VF are decoupled in the padded regime.** Steps A and C have nearly identical best_loss
+   (-2.83) but radically different VF (89% vs 3%). The NLL does not reflect pairwise distance validity.
+
+**Key open question for Phase 4:** Why does padding cause the VF collapse even when the NLL
+appears to train correctly? Three candidate hypotheses:
+- The latent space structure with T=21 is fundamentally harder than T=9 for the autoregressive ordering.
+- The 12 padding atoms (all zeros) create a degenerate latent manifold that corrupts sampling.
+- The attention over 21 tokens instead of 9 disrupts the causal dependency structure.
+
+Phase 4 ablation matrix should cross: {T=9 vs T=21} × {atom ordering} × {noise sigma} to isolate
+the padding effect.
 
 **Status:** [x] Fits | [ ] Conflict — escalate to Postdoc | [ ] Inconclusive — reason:
-Phase 2 results fit the research story: Apple architecture works on standard benchmarks before
-adaptation to molecules.
+Phase 3 results partially fit the research story: the Apple architecture degrades on molecular
+data, but the degradation point is PADDING (Step C), not shared scale (Step E) as originally
+hypothesized. The research story needs updating — shared scale is not the primary culprit.

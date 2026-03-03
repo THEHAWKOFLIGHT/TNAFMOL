@@ -461,3 +461,64 @@ Context was restored after previous session ran out. Level 2 CIFAR-10 is still r
 - Phase 3 steps A-F can begin immediately after Level 2 completes
 - Phase 3 will run steps in parallel: each step 5000 steps on a single GPU (cuda:5 or :6)
 - The KEY TEST is Step E (shared scale) — expect significant degradation vs. Step A (per-dim scale)
+
+## 2026-03-02 (context restored) — Phase 3 Step C NaN fix + GPU runs
+**Branch:** `exp/und_001`
+
+### INTENTION (written before action)
+Previous context ran out mid-debugging. Step C was producing NaN from step 9 onwards. Steps A and B completed successfully. This session: diagnose root cause of Step C NaN, fix it, run all remaining steps (C-F).
+
+### Decisions & Reasoning
+- **Root cause of Step C NaN**: Found via diagnostic: at step 9, z_max = 2.6e23 (overflow). The model weights were NOT yet NaN when loss was computed — z itself was overflowing.
+  - First fix attempt (zero xa/xb for padding): partially correct but missed a critical detail.
+  - **Actual root cause**: PermutationFlip (used in even-numbered blocks) reverses token order. The padding mask was applied in ORIGINAL token order (atoms 0-8 real, 9-20 padding), but after PermutationFlip the order is reversed (atoms 20-12 real in new positions 0-8, atoms 11-0 padding in positions 9-20). Zeroing xa/xb using the original mask was zeroing REAL atoms in PermutationFlip blocks and leaving PADDING positions unconstrained — exactly backwards!
+  - **Fix**: Permute padding_mask the same way as x before using it to zero xa/xb and build the attention mask. `mask_perm = permutation(padding_mask.unsqueeze(-1)).squeeze(-1)`.
+  - Verified: 20-step diagnostic shows stable loss descent, z_max < 5.2 throughout.
+- Also changed logdet normalization in padded blocks from T*D to n_real*D to match get_loss z² normalization (per real dof). This ensures NLL is balanced and not artificially deflated by the padding tokens.
+- Also changed the assert to a soft warning: skip NaN steps rather than crash, so skipping batch anomalies doesn't kill the run.
+
+### New Files Created
+- None (only modified `src/train_phase3.py`)
+
+### Commits
+- `901d6c5` — [und_001] code: fix permutation-aware padding mask in MetaBlockWithCond and MetaBlockSharedScale
+
+---
+
+## 2026-03-02 (session 3) — Phase 3 Steps C-F completion
+**Branch:** `exp/und_001`
+
+### INTENTION (written before action)
+Context restored from summary. Continuing from mid-debug of NaN in Steps C-F. n_real normalization fix was in place (commit 901d6c5). Previous session analyzed equilibrium math but didn't confirm if the fix worked. This session: verify fix works, complete all Phase 3 steps, collect results.
+
+### Decisions & Reasoning
+- **Discovered Step F already completed** (from a prior background run at 21:49 PST): loss=-3.047, VF=0.0. Step F uses clamping+regularization which prevents NaN but results in saturation equilibrium. The asymmetric clamp (alpha_neg=2.0) limits scale to exp(2.0)≈7.4× max, which prevents log-det explosion but the model doesn't learn the distribution — stuck in near-identity transform.
+- **Step C was running successfully** (PID 1304900) at step 1700, loss=-2.17 when session began. The 901d6c5 fix (permutation-aware padding mask + n_real normalization) worked.
+- **Accident**: killed PID 1306820 thinking it was a duplicate Step C, but it was actually a DataLoader worker for the ORIGINAL Step C run. This caused Step C to crash at step 4200 (checkpoint saved at step 4182, best_loss=-2.747). Cleared the directory and relaunched Step C fresh.
+- **Step D and E ran successfully**: both completed without NaN using 901d6c5 code.
+- **Decided to relaunch Step C from scratch** (not from checkpoint) since the evaluation and plots were not generated in the crashed run.
+- **Did not change lr for Steps C-F**: the n_real normalization fix alone was sufficient to prevent NaN at lr=5e-4. Earlier Adam overshoot hypothesis was incorrect — the permutation-aware mask was the real fix.
+
+### Key Results (Phase 3 Complete)
+
+| Step | Description | best_loss | VF | logdet/dof |
+|------|-------------|-----------|-----|-----------|
+| A | Raw coords, no padding | -2.827 | 89.1% | 0.122 |
+| B | + Atom type conditioning | -2.795 | 92.9% | 0.121 |
+| C | + Padding (T=21, n_real=9) | -2.825 | 2.7% | 0.122 |
+| D | + Noise augmentation | -1.902 | 14.3% | 0.088 |
+| E | Shared scale (KEY TEST) | -1.892 | 40.2% | 0.088 |
+| F | + Stabilization (clamp+reg) | -3.047 | 0.0% | 0.113 |
+
+**Interpretation**:
+1. **Padding is the primary failure point** (Step C: 89% → 2.7% VF). Adding 12 padding atoms to 9 real atoms collapses valid fraction dramatically, even though the architecture handles padding correctly via masking.
+2. **Noise augmentation partially recovers** (Step D: 2.7% → 14.3%). The noise sigma=0.05 smooths the distribution enough to help with pairwise distance validity.
+3. **Shared scale IMPROVES over per-dim with noise** (Step E vs D: 14.3% → 40.2%). This is the opposite of the expected result. The shared scale does NOT cause saturation in our diagnostic setting — the normalization fix resolved that issue. The improvement suggests shared scale may have better inductive bias for molecular coords (same scaling for all 3 spatial dims, which respects isotropy).
+4. **Clamping destroys performance** (Step F: 40.2% → 0.0%). The asymmetric clamping prevents the model from learning the necessary scale transformations. The clamping is too tight (alpha_pos=0.1 → max scale contraction = exp(-0.1) ≈ 0.905).
+5. **Loss magnitude vs VF are decoupled**: Steps C and A have similar best_loss (-2.83 vs -2.83) but radically different VF (2.7% vs 89.1%). The NLL doesn't capture pairwise distance validity. Loss alone is insufficient to diagnose molecular structure quality.
+
+### New Files Created
+- None (only ran experiments and collected results)
+
+### Commits
+- (to be added after this session's git operations)

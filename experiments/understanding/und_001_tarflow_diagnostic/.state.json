@@ -7,11 +7,11 @@
   "machine": {
     "host": "localhost",
     "user": "kai_nelson",
-    "gpu": "cuda:5,6,7",
+    "gpu": "cuda:2,5,6,7",
     "pid": null,
     "claude_session_id": null
   },
-  "last_updated": "2026-03-03T05:30:00Z",
+  "last_updated": "2026-03-03T06:20:00Z",
   "artifacts": {},
   "steps": [
     {
@@ -39,46 +39,56 @@
       "name": "phase2_cifar10",
       "status": "in_progress",
       "acceptance": "Apple TarFlow trained on CIFAR-10. bits/dim < 3.5, recognizable image samples. Loss curve + sample grid saved.",
-      "result": {"step_2000_loss": -1.9955, "status_at_2000": "stable_training"},
+      "result": {"step_7500_loss": -2.041, "status": "stable_training"},
       "started_at": "2026-03-02T21:14:00Z",
-      "last_progress": "2026-03-02T21:35:00Z",
+      "last_progress": "2026-03-03T06:10:00Z",
       "wandb_run": "https://wandb.ai/kaityrusnelson1/tnafmol/runs/rlvxam2e"
     },
     {
       "name": "phase3_step_a_swap_patches",
-      "status": "pending",
+      "status": "completed",
       "acceptance": "Apple architecture adapted: raw (x,y,z) per atom input, per-dimension scale (3 scales per atom), Apple loss (no clamping/reg). Trained on ethanol 5000 steps. Valid_fraction, NLL/dof, log_det/dof reported.",
-      "result": null
+      "result": {"best_loss": -2.827, "valid_fraction": 0.891, "nll_per_dof": -2.802, "logdet_per_dof": 0.122, "n_params": 6337560},
+      "completed_at": "2026-03-02T21:41:00Z"
     },
     {
       "name": "phase3_step_b_type_conditioning",
-      "status": "pending",
+      "status": "completed",
       "acceptance": "Atom type embeddings concatenated to position input. 5000 steps on ethanol. Impact on valid_fraction documented.",
-      "result": null
+      "result": {"best_loss": -2.795, "valid_fraction": 0.929, "nll_per_dof": -2.772, "logdet_per_dof": 0.121, "n_params": 6354008},
+      "completed_at": "2026-03-02T21:45:00Z"
     },
     {
       "name": "phase3_step_c_variable_size",
-      "status": "pending",
+      "status": "completed",
       "acceptance": "Padding + attention masking for variable atom counts. Ethanol padded to 21 atoms. 5000 steps. Masking impact documented.",
-      "result": null
+      "result": {"best_loss": -2.825, "valid_fraction": 0.027, "nll_per_dof": -2.801, "logdet_per_dof": 0.122, "n_params": 6366296},
+      "completed_at": "2026-03-03T06:15:00Z",
+      "notes": "Crashed twice due to: (1) T*D vs n_real*D logdet normalization mismatch, (2) padding mask not permuted with PermutationFlip. Fixed in commit 901d6c5. Successfully ran to completion. Key finding: VF collapses from 89% to 2.7% with padding — PRIMARY failure point."
     },
     {
       "name": "phase3_step_d_noise_augmentation",
-      "status": "pending",
+      "status": "completed",
       "acceptance": "Gaussian noise sigma=0.05 on atomic coordinates during training. 5000 steps on ethanol. Impact documented.",
-      "result": null
+      "result": {"best_loss": -1.902, "valid_fraction": 0.143, "nll_per_dof": -1.867, "logdet_per_dof": 0.088, "n_params": 6366296},
+      "completed_at": "2026-03-03T06:10:00Z",
+      "notes": "Noise augmentation partially recovers VF from 2.7% to 14.3%. But loss is higher than Step C — noise regularizes but degrades NLL."
     },
     {
       "name": "phase3_step_e_shared_scale",
-      "status": "pending",
+      "status": "completed",
       "acceptance": "Per-dimension scale replaced with 1 shared scale (our style). 5000 steps on ethanol. Valid_fraction compared to Step A. KEY TEST: does shared scale cause saturation equilibrium?",
-      "result": null
+      "result": {"best_loss": -1.892, "valid_fraction": 0.402, "nll_per_dof": -1.864, "logdet_per_dof": 0.088, "n_params": 6364240},
+      "completed_at": "2026-03-03T06:15:00Z",
+      "notes": "SURPRISING RESULT: shared scale IMPROVES VF over per-dim scale (40.2% vs 14.3%). With correct n_real normalization, shared scale does NOT cause saturation exploitation. Hypothesis that shared scale is the primary failure was WRONG."
     },
     {
       "name": "phase3_step_f_stabilization",
-      "status": "pending",
+      "status": "completed",
       "acceptance": "Add asymmetric clamping + log-det regularization. 5000 steps on ethanol. Compare with/without per-dim scale.",
-      "result": null
+      "result": {"best_loss": -3.047, "valid_fraction": 0.0, "nll_per_dof": -3.047, "logdet_per_dof": 0.113, "n_params": 6364240},
+      "completed_at": "2026-03-03T06:00:00Z",
+      "notes": "Clamping prevents training at all — VF=0.0. Loss converges at -3.047 but model stuck in identity-like equilibrium. Clamping too tight (alpha_pos=0.1) prevents necessary scale learning."
     },
     {
       "name": "phase4_ablation_matrix",
