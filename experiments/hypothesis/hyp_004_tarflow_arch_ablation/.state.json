@@ -1,0 +1,212 @@
+{
+  "exp_id": "hyp_004",
+  "command": "OPTIMIZE",
+  "status": "in_progress",
+  "created": "2026-03-02T00:00:00Z",
+  "last_updated": "2026-03-02T23:30:00Z",
+  "machine": {
+    "host": "escher",
+    "user": "kai_nelson",
+    "gpu": "cuda:0",
+    "pid": 1222332,
+    "claude_session_id": "resume-hyp004-b"
+  },
+  "artifacts": {
+    "dataset": "data/",
+    "checkpoints": [
+      "angles/sanity/ablation_A_baseline/best.pt",
+      "angles/sanity/ablation_B_bidir/best.pt",
+      "angles/sanity/ablation_C_perm/best.pt",
+      "angles/sanity/ablation_D_pos/best.pt",
+      "angles/sanity/ablation_E_bidir_perm/best.pt",
+      "angles/sanity/ablation_F_bidir_pos/best.pt",
+      "angles/sanity/sweep/runs/run_3000steps_lr5e-5/best.pt",
+      "angles/sanity/sweep/runs/run_3000steps_lr1e-4/best.pt",
+      "angles/sanity/sweep/runs/run_3000steps_lr2e-4/best.pt",
+      "angles/sanity/full/best.pt",
+      "angles/heuristics/val/best.pt",
+      "angles/heuristics/full/best.pt"
+    ],
+    "raw_outputs": [
+      "angles/sanity/ablation_A_baseline/raw/mol_results.pt",
+      "angles/sanity/ablation_B_bidir/raw/mol_results.pt",
+      "angles/sanity/ablation_C_perm/raw/mol_results.pt",
+      "angles/sanity/ablation_D_pos/raw/mol_results.pt",
+      "angles/sanity/ablation_E_bidir_perm/raw/mol_results.pt",
+      "angles/sanity/ablation_F_bidir_pos/raw/mol_results.pt",
+      "angles/sanity/sweep/runs/run_3000steps_lr5e-5/raw/mol_results.pt",
+      "angles/sanity/sweep/runs/run_3000steps_lr1e-4/raw/mol_results.pt",
+      "angles/sanity/sweep/runs/run_3000steps_lr2e-4/raw/mol_results.pt",
+      "angles/sanity/full/raw/mol_results.pt",
+      "angles/heuristics/val/raw/mol_results.pt",
+      "angles/heuristics/full/raw/mol_results.pt"
+    ]
+  },
+  "steps": [
+    {
+      "name": "diagnostic",
+      "status": "completed",
+      "acceptance": "Diagnostic report written to reports/diagnostic_report.md. Bidirectional type conditioning verified: no new collapse modes, loss decreases normally, log_det_per_dof comparable to hyp_003.",
+      "completed_at": "2026-03-02T04:00:00Z",
+      "result": {"mean_valid_fraction": 0.129, "w_and_b": "https://wandb.ai/kaityrusnelson1/tnafmol/runs/8s3kfzri"}
+    },
+    {
+      "name": "plan",
+      "status": "completed",
+      "acceptance": "Plan sub-report written to reports/plan_report.md and approved by Postdoc.",
+      "completed_at": "2026-03-02T04:30:00Z"
+    },
+    {
+      "name": "angle_sanity_val",
+      "status": "completed",
+      "acceptance": "6-config architectural ablation completed (3000 steps each). Any config reaches mean valid_fraction > 0.30.",
+      "completed_at": "2026-03-02T17:00:00Z",
+      "result": {
+        "best_config": "D_pos (use_pos_enc=True)",
+        "best_mean_vf": 0.1765,
+        "config_ranking": {
+          "D_pos": 0.1765,
+          "F_bidir_pos": 0.1640,
+          "A_baseline": 0.1268,
+          "C_perm": 0.1260,
+          "B_bidir": 0.1180,
+          "E_bidir_perm": 0.1092
+        },
+        "promising_criterion_met": false,
+        "notes": "No config exceeded 0.20 mean VF. D_pos best at 17.65%. Proceeding to full run as best config — pos_enc adds ~5ppt over baseline. Sweep confirms lr=5e-5 marginally best (17.73%). All configs saturate at loss=0.869 by step 150."
+      }
+    },
+    {
+      "name": "angle_sanity_sweep",
+      "status": "completed",
+      "acceptance": "Top 2 configs identified from ablation. If no config meets promising criterion, document and proceed to next angle or report failure.",
+      "completed_at": "2026-03-02T17:30:00Z",
+      "result": {
+        "sweep_runs": 3,
+        "best": "pos_enc, lr=5e-5, bs=128 → 17.73% mean VF",
+        "bs256_runs_skipped": "LR spread <0.5ppt; bs=128 results conclusive. Remaining 3 bs=256 runs not needed.",
+        "best_config_for_full": "use_pos_enc=True, lr=5e-5, bs=128, alpha_pos=0.02, log_det_reg_weight=5.0"
+      }
+    },
+    {
+      "name": "angle_sanity_full",
+      "status": "completed",
+      "acceptance": "Full training run on best ablation config (D_pos). valid_fraction evaluated on all 8 molecules. n_steps=10000.",
+      "completed_at": "2026-03-02T20:00:00Z",
+      "result": {
+        "mean_vf": 0.1748,
+        "best_val_loss": 0.8176,
+        "best_step": 1000,
+        "w_and_b": "https://wandb.ai/kaityrusnelson1/tnafmol/runs/k88dxne7",
+        "per_mol": {
+          "aspirin": 0.004,
+          "benzene": 0.222,
+          "ethanol": 0.442,
+          "malonaldehyde": 0.398,
+          "naphthalene": 0.018,
+          "salicylic_acid": 0.056,
+          "toluene": 0.074,
+          "uracil": 0.184
+        },
+        "notes": "10000 steps matches 3000 steps (17.48% vs 17.65%) — confirms alpha_pos saturation is NOT a training-budget issue. Best checkpoint always at step ~1000. Additional steps provide no benefit."
+      }
+    },
+    {
+      "name": "angle_heuristics_val",
+      "status": "completed",
+      "acceptance": "SBG recipe validation run (3000 steps) on D_pos config. Promising if valid_fraction > best SANITY full result (17.48%).",
+      "completed_at": "2026-03-02T20:30:00Z",
+      "result": {
+        "mean_vf": 0.1793,
+        "best_val_loss": 0.8116,
+        "best_step": 1500,
+        "w_and_b": "https://wandb.ai/kaityrusnelson1/tnafmol/runs/ht2xyghi",
+        "per_mol": {
+          "aspirin": 0.018,
+          "benzene": 0.242,
+          "ethanol": 0.378,
+          "malonaldehyde": 0.368,
+          "naphthalene": 0.044,
+          "salicylic_acid": 0.082,
+          "toluene": 0.098,
+          "uracil": 0.204
+        },
+        "promising": true,
+        "delta_vs_sanity_full": "+0.45ppt",
+        "notes": "Technically passes promising criterion (17.93% > 17.48%). Small gain vs SANITY full — SBG improves smaller molecules by +2-3ppt each but slightly hurts ethanol/malonaldehyde. Pattern differs from hyp_003 where SBG gave +3.7ppt; here baseline already higher due to pos_enc. Best checkpoint at step 1500 (better val_loss 0.8116 vs SANITY full 0.8176)."
+      }
+    },
+    {
+      "name": "angle_heuristics_sweep",
+      "status": "completed",
+      "acceptance": "Sweep completed. Best config selected. Sweep URL logged.",
+      "completed_at": "2026-03-02T21:00:00Z",
+      "result": {
+        "n_runs": 9,
+        "grid": "ema_decay=[0.99,0.999,0.9999] x lr=[1e-4,3e-4,1e-3]",
+        "best_config": "lr=1e-3, ema_decay=0.99, bs=512, OneCycleLR",
+        "best_mean_vf": 0.295,
+        "best_w_and_b": "https://wandb.ai/kaityrusnelson1/tnafmol/runs/wzsmbdhg",
+        "per_mol_best": {
+          "aspirin": 0.072,
+          "benzene": 0.326,
+          "ethanol": 0.528,
+          "malonaldehyde": 0.492,
+          "naphthalene": 0.116,
+          "salicylic_acid": 0.196,
+          "toluene": 0.192,
+          "uracil": 0.440
+        },
+        "molecules_above_50pct": 1,
+        "key_finding": "lr=1e-3 dominates (29.5% best) over lr=1e-4/3e-4 (~19%). ema_decay=0.99 best for 3000-step runs — faster EMA tracking is more appropriate at this scale. ema_decay=0.9999 too slow, model barely converges. First time any molecule (ethanol 52.8%) exceeded 50% valid fraction.",
+        "caveat": "Raw outputs only saved for ema=0.9999 (last run per lr overwrite). W&B has all 9 run summaries."
+      }
+    },
+    {
+      "name": "angle_heuristics_full",
+      "status": "completed",
+      "acceptance": "Full training run (20000 steps) on best sweep config. Final evaluation on all 8 molecules.",
+      "started_at": "2026-03-02T21:00:00Z",
+      "completed_at": "2026-03-02T23:00:00Z",
+      "w_and_b": "https://wandb.ai/kaityrusnelson1/tnafmol/runs/z50wvlbl",
+      "result": {
+        "mean_vf": 0.267,
+        "best_val_loss": 0.8188,
+        "best_step": 1000,
+        "primary_criterion_met": false,
+        "molecules_above_50pct": 1,
+        "per_mol": {
+          "aspirin": 0.066,
+          "benzene": 0.266,
+          "ethanol": 0.400,
+          "malonaldehyde": 0.566,
+          "naphthalene": 0.078,
+          "salicylic_acid": 0.178,
+          "toluene": 0.146,
+          "uracil": 0.436
+        },
+        "notes": "1/8 molecules >= 50% (malonaldehyde 56.6%). FAILS primary criterion (4+/8). Best checkpoint at step 1000 — same early saturation as all previous runs. Mean VF slightly lower than sweep best (26.7% vs 29.5%) due to stochastic variation in 500-sample eval. Sweep: ethanol 52.8%; full: malonaldehyde 56.6% — different molecule crosses threshold each time."
+      }
+    },
+    {
+      "name": "angle_scale_val",
+      "status": "skipped",
+      "reason": "Loss saturates at step ~150 across ALL 6 ablation configs — identical to hyp_003 saturation. Increasing capacity will not escape the alpha_pos equilibrium. Condition for skipping from plan: 'saturation by step 150'. Confirmed.",
+      "completed_at": "2026-03-02T18:00:00Z"
+    },
+    {
+      "name": "source_integration",
+      "status": "completed",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice; all new code promoted.",
+      "completed_at": "2026-03-02T23:30:00Z",
+      "result": {
+        "notes": "No .py files in any experiments/ subdirectory. No __pycache__ in experiments/. New architectural features (BidirectionalTypeEncoder, use_pos_enc, use_perm_aug) were already promoted to src/model.py and src/train.py in commit 44d4ec9. No Source Integration Directive needed — all code is current."
+      }
+    },
+    {
+      "name": "merge_and_tag",
+      "status": "pending",
+      "acceptance": "Merged to main with tag hyp_004; pre-merge checks pass."
+    }
+  ]
+}

@@ -36,6 +36,17 @@ hyp_003 changes:
   alpha_pos bounds expansion, alpha_neg allows contraction — prevents log_det exploitation
 - Add log_det_reg_weight penalty on log_det_per_dof^2 to explicitly penalize exploitation
 - Add EMAModel class for heuristics angle
+
+hyp_004 changes:
+- BidirectionalTypeEncoder: 1-layer bidirectional transformer encoder over atom type
+  embeddings. Runs once per forward/inverse pass, enriches each atom's type embedding
+  with full molecular composition context (no causal mask). Addresses the gap where
+  causal masking hides future atom types during generation.
+- TarFlowBlock: optional learned positional encoding (nn.Embedding) added in d_model
+  space after input projection, before attention. Each block has independent positional
+  embeddings.
+- TarFlow: use_bidir_types flag to toggle bidirectional type encoder, use_pos_enc flag
+  to toggle positional encodings.
 """
 
 import math
@@ -212,6 +223,59 @@ class ActNorm(nn.Module):
 
 
 # =============================================================================
+# Bidirectional Type Encoder (hyp_004)
+# =============================================================================
+
+class BidirectionalTypeEncoder(nn.Module):
+    """Encode atom types bidirectionally — every atom sees all other types.
+
+    Single transformer encoder layer with NO causal mask. Produces per-atom
+    context vectors that encode the full molecular composition.
+
+    This addresses a key architectural gap: in the standard TarFlow, causal
+    masking means atom i only sees types of atoms 0..i-1. During generation,
+    later atoms are built without knowing what atom types come next. The
+    bidirectional encoder computes a composition-aware embedding ONCE, then
+    passes it to all blocks as conditioning context.
+
+    Args:
+        emb_dim: dimension of atom type embeddings (must match TarFlow.atom_type_emb_dim)
+        n_heads: number of attention heads (default 2)
+        ffn_dim: feedforward hidden dimension (default 64)
+        dropout: dropout rate (default 0.1)
+    """
+
+    def __init__(self, emb_dim: int = 16, n_heads: int = 2, ffn_dim: int = 64, dropout: float = 0.1):
+        super().__init__()
+        self.encoder = nn.TransformerEncoderLayer(
+            d_model=emb_dim,
+            nhead=n_heads,
+            dim_feedforward=ffn_dim,
+            batch_first=True,
+            dropout=dropout,
+        )
+        self.norm = nn.LayerNorm(emb_dim)
+
+    def forward(self, atom_type_emb: torch.Tensor, atom_mask: torch.Tensor) -> torch.Tensor:
+        """Bidirectional encoding of atom type embeddings.
+
+        Args:
+            atom_type_emb: (B, N, emb_dim) raw atom type embeddings
+            atom_mask: (B, N) 1=real, 0=padding
+
+        Returns:
+            type_context: (B, N, emb_dim) enriched per-atom context vectors
+        """
+        # key_padding_mask: True where position should be IGNORED
+        key_padding_mask = (atom_mask < 0.5)  # (B, N) True=padding
+        out = self.encoder(atom_type_emb, src_key_padding_mask=key_padding_mask)
+        out = self.norm(out)
+        # Zero out padding positions
+        out = out * atom_mask.unsqueeze(-1)
+        return out  # (B, N, emb_dim)
+
+
+# =============================================================================
 # TarFlow Block
 # =============================================================================
 
@@ -232,6 +296,8 @@ class TarFlowBlock(nn.Module):
         alpha_pos: soft clamp bound for positive log_scale (expansion limit)
         alpha_neg: soft clamp bound for negative log_scale (contraction limit)
         shift_only: if True, use volume-preserving (shift-only) flow
+        use_pos_enc: if True, add learned positional encodings (hyp_004)
+        max_atoms: max number of atoms for positional encoding table (default 21)
         log_scale_max: DEPRECATED — kept for backward compat, ignored if alpha_pos/alpha_neg provided
     """
 
@@ -246,6 +312,8 @@ class TarFlowBlock(nn.Module):
         alpha_pos: float = 0.1,
         alpha_neg: float = 2.0,
         shift_only: bool = False,
+        use_pos_enc: bool = False,
+        max_atoms: int = 21,
         log_scale_max: float = 0.5,  # DEPRECATED — ignored, kept for compat
     ):
         super().__init__()
@@ -255,12 +323,20 @@ class TarFlowBlock(nn.Module):
         self.alpha_pos = alpha_pos
         self.alpha_neg = alpha_neg
         self.shift_only = shift_only
+        self.use_pos_enc = use_pos_enc
 
         # Learnable SOS token (provides context for the first atom)
         self.sos = nn.Parameter(torch.randn(1, 1, d_model) * 0.01)
 
         # Input projection: in_features -> d_model
         self.input_proj = nn.Linear(in_features, d_model)
+
+        # Positional encodings (hyp_004): learned embedding per sequence position
+        # max_atoms + 1 for the SOS token at position 0
+        # Each block has independent positional embeddings (may learn different
+        # position-dependent patterns at different flow depths).
+        if use_pos_enc:
+            self.pos_embed = nn.Embedding(max_atoms + 1, d_model)
 
         # Multi-head attention
         self.attn = nn.MultiheadAttention(
@@ -391,6 +467,15 @@ class TarFlowBlock(nn.Module):
         device = positions.device
 
         h = self._get_context_features(positions, atom_type_emb)  # (B, N+1, d_model)
+
+        # Add positional encodings (hyp_004) — applied BEFORE attention, in d_model space
+        # Positions are in canonical order (0=SOS, 1..N=atoms).
+        # For reverse blocks, the atom sequence was already flipped externally,
+        # so positional encoding encodes atom *identity* (atom 0 is always atom 0
+        # in the original ordering, regardless of block direction).
+        if self.use_pos_enc:
+            pos_indices = torch.arange(N + 1, device=device)  # 0..N (SOS + atoms)
+            h = h + self.pos_embed(pos_indices)  # broadcast: (B, N+1, d_model)
 
         # Build causal mask: (N+1, N+1) additive bias
         causal_bias = self._build_causal_mask(N, device)  # (N+1, N+1)
@@ -571,6 +656,8 @@ class TarFlow(nn.Module):
         alpha_neg: soft clamp bound for negative log_scale — allows contraction (default 2.0)
         shift_only: if True, use volume-preserving flow (default False)
         use_actnorm: if True, add ActNorm after each block (not used in hyp_003)
+        use_bidir_types: if True, use BidirectionalTypeEncoder (hyp_004)
+        use_pos_enc: if True, add learned positional encodings per block (hyp_004)
         log_scale_max: DEPRECATED — kept for backward compat, ignored
     """
 
@@ -588,6 +675,8 @@ class TarFlow(nn.Module):
         alpha_neg: float = 2.0,
         shift_only: bool = False,
         use_actnorm: bool = False,
+        use_bidir_types: bool = False,
+        use_pos_enc: bool = False,
         log_scale_max: float = 0.5,  # DEPRECATED — kept for backward compat
     ):
         super().__init__()
@@ -599,9 +688,23 @@ class TarFlow(nn.Module):
         self.alpha_neg = alpha_neg
         self.shift_only = shift_only
         self.use_actnorm = use_actnorm
+        self.use_bidir_types = use_bidir_types
+        self.use_pos_enc = use_pos_enc
 
         # Atom type embedding (shared across all blocks)
         self.atom_type_emb = nn.Embedding(n_atom_types, atom_type_emb_dim)
+
+        # Bidirectional type encoder (hyp_004): enriches atom type embeddings
+        # with full molecular composition context via bidirectional attention
+        if use_bidir_types:
+            self.type_encoder = BidirectionalTypeEncoder(
+                emb_dim=atom_type_emb_dim,
+                n_heads=2,
+                ffn_dim=64,
+                dropout=dropout,
+            )
+        else:
+            self.type_encoder = None
 
         # in_features = 3 (positions) + atom_type_emb_dim
         in_features = 3 + atom_type_emb_dim
@@ -618,6 +721,8 @@ class TarFlow(nn.Module):
                 alpha_pos=alpha_pos,
                 alpha_neg=alpha_neg,
                 shift_only=shift_only,
+                use_pos_enc=use_pos_enc,
+                max_atoms=max_atoms,
             )
             for i in range(n_blocks)
         ])
@@ -638,11 +743,16 @@ class TarFlow(nn.Module):
         atom_types: torch.Tensor,
         atom_mask: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Ensure all inputs are (B, N, ...) shaped.
+        """Ensure all inputs are (B, N, ...) shaped and compute type context.
+
+        If use_bidir_types is True, the atom type embeddings are enriched
+        with full molecular composition context via the BidirectionalTypeEncoder.
+        The enriched embeddings have the same shape as raw embeddings (B, N, emb_dim),
+        so no downstream shape changes are needed.
 
         Returns:
             positions: (B, N, 3)
-            atom_type_emb: (B, N, emb_dim)
+            atom_type_emb: (B, N, emb_dim) — raw or bidirectionally enriched
             atom_mask: (B, N)
         """
         B = positions.shape[0]
@@ -653,6 +763,11 @@ class TarFlow(nn.Module):
             atom_types = atom_types.unsqueeze(0).expand(B, -1)
 
         atom_type_emb = self.atom_type_emb(atom_types)  # (B, N, emb_dim)
+
+        # Bidirectional type encoding (hyp_004): compute once, share across all blocks
+        if self.use_bidir_types and self.type_encoder is not None:
+            atom_type_emb = self.type_encoder(atom_type_emb, atom_mask)
+
         return positions, atom_type_emb, atom_mask
 
     def forward(
@@ -811,8 +926,10 @@ class TarFlow(nn.Module):
         atom_types_b = atom_types.to(device).unsqueeze(0).expand(n_samples, -1)
         atom_mask_b = atom_mask.to(device).unsqueeze(0).expand(n_samples, -1)
 
-        # Get atom type embeddings
+        # Get atom type embeddings (with optional bidirectional encoding)
         atom_type_emb = self.atom_type_emb(atom_types_b)  # (B, N, emb_dim)
+        if self.use_bidir_types and self.type_encoder is not None:
+            atom_type_emb = self.type_encoder(atom_type_emb, atom_mask_b)
 
         # Apply inverse blocks (and ActNorm) in reverse order
         x = z

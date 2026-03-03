@@ -1,0 +1,23 @@
+{
+  "angle": "heuristics",
+  "stage": "sweep",
+  "description": "Sweep over SBG recipe hyperparameters — EMA decay x LR — holding bs=512, OneCycleLR, betas=(0.9,0.95)",
+  "sweep_axes": {
+    "ema_decay": [0.99, 0.999, 0.9999],
+    "lr": [1e-4, 3e-4, 5e-4]
+  },
+  "fixed": {
+    "use_pos_enc": true,
+    "use_bidir_types": false,
+    "use_perm_aug": false,
+    "use_ema": true,
+    "batch_size": 512,
+    "lr_schedule": "onecycle",
+    "betas": [0.9, 0.95],
+    "n_steps": 3000,
+    "alpha_pos": 0.02,
+    "log_det_reg_weight": 5.0
+  },
+  "status": "pending",
+  "notes": "Only run if heuristics val exceeds SANITY full baseline (17.48%). Val run W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/ht2xyghi"
+}
