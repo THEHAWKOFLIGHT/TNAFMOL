@@ -424,3 +424,40 @@ Previous PhD agent context exhausted after completing:
 - `[und_001] results: Phase 3 step_e complete (KEY TEST)`
 - `[und_001] results: Phase 3 step_f complete`
 - `[und_001] docs: adaptation_report.md`
+
+---
+
+## 2026-03-02 (session continuation) — Phase 3 pre-flight + CIFAR-10 monitoring
+**Branch:** `exp/und_001`
+
+### INTENTION (written before action)
+Context was restored after previous session ran out. Level 2 CIFAR-10 is still running (PID 1282962, GPU 7, step 3000+). In this session: verify Phase 3 script (train_phase3.py) is bug-free before CIFAR-10 finishes, so Phase 3 can begin immediately after Phase 2.
+
+### Decisions & Reasoning
+- Verified CIFAR-10 run healthy: step 3000 at 21:41, loss=-2.02, GPU at 87% utilization
+- Committed Level 2 config.json and interim samples.png (step 1340 → already committed earlier; same file)
+- Updated .state.json with step 2000 progress marker
+- Ran end-to-end sanity tests for all 6 Phase 3 steps (A-F) on CPU with 5 training steps each
+- **Found and fixed bug in train_phase3.py**: attention mask shape `(B, T, T)` must be `(B, 1, T, T)` for `F.scaled_dot_product_attention` to broadcast over num_heads. Bug affected Steps C, D, E, F (all that use padding mask). Fixed by adding `.unsqueeze(1)` in both `MetaBlockWithCond.forward` and `MetaBlockSharedScale.forward`.
+- All 6 steps pass CPU sanity tests after fix.
+
+### Verification
+- Step A: best_loss=0.043 (5 steps, CPU) ✓
+- Step B: best_loss=0.118 ✓
+- Step C: best_loss=0.254 ✓  (previously failed with RuntimeError: size mismatch dim 1)
+- Step D: best_loss=0.222 ✓
+- Step E: best_loss=0.281 ✓
+- Step F: best_loss=0.292 ✓
+
+### New Files Created
+- `finalize_level2.sh` — shell script to commit Level 2 final results after training completes
+
+### Commits
+- `00d27f5` — [und_001] config: Level 2 CIFAR-10 config + .state.json progress update (step 2000, loss=-2.00)
+- `34fd7dd` — [und_001] code: fix attention mask broadcasting bug in train_phase3.py (B,T,T) → (B,1,T,T)
+
+### Notes
+- Level 2 CIFAR-10 expected to complete in ~7 more hours from 21:40 PST (March 2)
+- Phase 3 steps A-F can begin immediately after Level 2 completes
+- Phase 3 will run steps in parallel: each step 5000 steps on a single GPU (cuda:5 or :6)
+- The KEY TEST is Step E (shared scale) — expect significant degradation vs. Step A (per-dim scale)
