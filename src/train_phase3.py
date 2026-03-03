@@ -201,11 +201,11 @@ class MetaBlockSharedScale(nn.Module):
         if padding_mask is not None:
             # padding_mask: (B, T), True = real atom
             # We want: mask[b, i, j] = causal(i,j) AND padding_mask[b, j]
-            # In attention: we ADD the mask (True = attend, False = mask out → -inf)
-            # Convert: (T, T) causal × (B, 1, T) padding → (B, T, T)
+            # scaled_dot_product_attention needs (B, num_heads, T, T) or broadcastable
+            # Use (B, 1, T, T) so it broadcasts over num_heads
             B = x.size(0)
             pad_key_mask = padding_mask.unsqueeze(1).expand(B, attn_mask.size(0), -1)  # (B, T, T)
-            attn_mask_full = attn_mask.unsqueeze(0) * pad_key_mask.float()  # (B, T, T)
+            attn_mask_full = (attn_mask.unsqueeze(0) * pad_key_mask.float()).unsqueeze(1)  # (B, 1, T, T)
         else:
             attn_mask_full = attn_mask  # (T, T) will broadcast
 
@@ -631,11 +631,13 @@ class MetaBlockWithCond(nn.Module):
         attn_mask = self.base.attn_mask  # (T, T)
         if padding_mask is not None:
             B = x.size(0)
-            # Combine causal with padding mask: both (B, T, T)
+            # Combine causal with padding mask
+            # pad_key: (B, T, T) — key padding (True = valid key position)
             pad_key = padding_mask.float().unsqueeze(1).expand(B, attn_mask.size(0), -1)
-            attn_mask_combined = attn_mask.unsqueeze(0) * pad_key  # (B, T, T)
+            # (B, T, T) causal * padding → (B, 1, T, T) for broadcast over num_heads
+            attn_mask_combined = (attn_mask.unsqueeze(0) * pad_key).unsqueeze(1)  # (B, 1, T, T)
         else:
-            attn_mask_combined = attn_mask
+            attn_mask_combined = attn_mask  # (T, T) — broadcasts correctly
 
         # Concatenate conditioning to positions for proj_in
         if cond_perm is not None:
