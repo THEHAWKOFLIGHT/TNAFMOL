@@ -196,8 +196,12 @@
     },
     {
       "name": "source_integration",
-      "status": "pending",
-      "acceptance": "No .py files in experiment dir; src/ reflects current practice; all new code promoted."
+      "status": "completed",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice; all new code promoted.",
+      "completed_at": "2026-03-02T23:30:00Z",
+      "result": {
+        "notes": "No .py files in any experiments/ subdirectory. No __pycache__ in experiments/. New architectural features (BidirectionalTypeEncoder, use_pos_enc, use_perm_aug) were already promoted to src/model.py and src/train.py in commit 44d4ec9. No Source Integration Directive needed — all code is current."
+      }
     },
     {
       "name": "merge_and_tag",
