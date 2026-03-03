@@ -11,7 +11,7 @@
     "pid": null,
     "claude_session_id": null
   },
-  "last_updated": "2026-03-03T06:20:00Z",
+  "last_updated": "2026-03-03T07:05:00Z",
   "artifacts": {},
   "steps": [
     {
@@ -92,14 +92,33 @@
     },
     {
       "name": "phase4_ablation_matrix",
-      "status": "pending",
+      "status": "completed",
       "acceptance": "Targeted crossing of most impactful factors from Phase 3. ~10-15 configs, 5000 steps each on ethanol. Results table + per-factor effect sizes.",
-      "result": null
+      "result": {
+        "n_configs": 9,
+        "best_config": "T=9, noise, per-dim (96.2% VF)",
+        "best_practical_T21": "T=21, noise, shared (40.2% VF)",
+        "primary_finding": "Padding is sole failure mechanism — smooth linear decline with pad_fraction",
+        "key_numbers": {
+          "T9_no_noise_shared": 0.936,
+          "T9_noise_perdim": 0.962,
+          "T9_noise_shared": 0.953,
+          "T21_no_noise_shared": 0.009,
+          "T12_noise_shared": 0.696,
+          "T15_noise_shared": 0.504,
+          "T21_perm_aug": 0.021,
+          "T21_so3_aug": 0.348,
+          "T9_noise_shared_clamp": 0.934
+        }
+      },
+      "completed_at": "2026-03-03T07:00:00Z",
+      "notes": "9 configs: 4 core 2x2x2 crossing (T×noise×scale), 2 padding sweep (T=12,15), 2 augmentation tests (perm, SO3), 1 clamp without padding. Scale type irrelevant at T=9 (<1% diff). Padding causes smooth linear VF decline. Perm aug catastrophically harmful. Clamping only harmful with padding."
     },
     {
       "name": "phase5_best_config_validation",
-      "status": "pending",
+      "status": "in_progress",
       "acceptance": "Best config from Phase 4 tested on all 8 MD17 molecules. Valid_fraction scaling with molecule size reported. Compared against hyp_003 best (18.3%).",
+      "started_at": "2026-03-02T10:00:00Z",
       "result": null
     },
     {

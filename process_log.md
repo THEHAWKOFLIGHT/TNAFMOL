@@ -609,3 +609,28 @@ Plan (written before execution):
 
 ### Commits
 - (see git log for commits after this entry)
+
+---
+
+## 2026-03-02 — und_001 Phase 5: Best Config on All 8 MD17 Molecules
+**Branch:** `exp/und_001`
+
+### Decisions & Reasoning
+- Phase 4 confirmed padding as primary failure mode. T=9 configs achieve 93-96% VF; T=21 best is 40.2%.
+- Phase 5 extends the two best configs to all 8 molecules to measure: (A) ceiling without padding, (B) practical padded multi-molecule performance.
+- Config A: T=n_real (no padding), per-dim scale, noise=0.05 — best performing T=n_real combination from Phase 4 (config 2: 96.1%).
+- Config B: T=21 (padded), shared scale, noise=0.05 — best performing padded combination from Phase 3/4 (step E: 40.2%).
+- Both configs: atom type embedding, no clamping, 5000 steps, same hyperparams as Phase 3/4.
+- For Config A, slice positions to first n_real atoms from dataset (strips padding before forward pass).
+- For Config B, use dataset as-is (21-atom format with mask).
+- Aspirin has n_real=21 — Config A and Config B are IDENTICAL for aspirin (no padding either way). This serves as a sanity check.
+- Wrote intention to process_log BEFORE running any experiments.
+- Runs are parallelized: GPU5 handles Config A molecules, GPU6 handles Config B molecules (batched sequentially).
+
+### New Files Created
+- `src/train_phase5.py` — Phase 5 training script (Config A and B, all molecules)
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase5/` — results directory
+- `reports/phase5_report.md` — full Phase 5 analysis (written after runs complete)
+
+### Commits
+- (pending — will be added after runs complete)
