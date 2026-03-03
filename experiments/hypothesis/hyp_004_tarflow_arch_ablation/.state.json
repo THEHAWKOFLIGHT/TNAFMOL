@@ -134,16 +134,37 @@
     },
     {
       "name": "angle_heuristics_sweep",
-      "status": "in_progress",
+      "status": "completed",
       "acceptance": "Sweep completed. Best config selected. Sweep URL logged.",
-      "started_at": "2026-03-02T20:30:00Z",
-      "sweep_configs": "9 runs: ema_decay=[0.99,0.999,0.9999] x lr=[1e-4,3e-4,1e-3], bs=512 fixed",
-      "pid": 1226110
+      "completed_at": "2026-03-02T21:00:00Z",
+      "result": {
+        "n_runs": 9,
+        "grid": "ema_decay=[0.99,0.999,0.9999] x lr=[1e-4,3e-4,1e-3]",
+        "best_config": "lr=1e-3, ema_decay=0.99, bs=512, OneCycleLR",
+        "best_mean_vf": 0.295,
+        "best_w_and_b": "https://wandb.ai/kaityrusnelson1/tnafmol/runs/wzsmbdhg",
+        "per_mol_best": {
+          "aspirin": 0.072,
+          "benzene": 0.326,
+          "ethanol": 0.528,
+          "malonaldehyde": 0.492,
+          "naphthalene": 0.116,
+          "salicylic_acid": 0.196,
+          "toluene": 0.192,
+          "uracil": 0.440
+        },
+        "molecules_above_50pct": 1,
+        "key_finding": "lr=1e-3 dominates (29.5% best) over lr=1e-4/3e-4 (~19%). ema_decay=0.99 best for 3000-step runs — faster EMA tracking is more appropriate at this scale. ema_decay=0.9999 too slow, model barely converges. First time any molecule (ethanol 52.8%) exceeded 50% valid fraction.",
+        "caveat": "Raw outputs only saved for ema=0.9999 (last run per lr overwrite). W&B has all 9 run summaries."
+      }
     },
     {
       "name": "angle_heuristics_full",
-      "status": "pending",
-      "acceptance": "Full training run (20000 steps) on best sweep config. Final evaluation on all 8 molecules."
+      "status": "in_progress",
+      "acceptance": "Full training run (20000 steps) on best sweep config. Final evaluation on all 8 molecules.",
+      "started_at": "2026-03-02T21:00:00Z",
+      "w_and_b": "https://wandb.ai/kaityrusnelson1/tnafmol/runs/z50wvlbl",
+      "pid": 1246753
     },
     {
       "name": "angle_scale_val",
