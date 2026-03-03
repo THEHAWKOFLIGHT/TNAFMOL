@@ -268,6 +268,10 @@ def train(cfg: dict):
     if cfg["stage"] == "sweep":
         lr_str = f"lr{cfg['lr']:.0e}".replace("-0", "-").replace("+0", "")
         stage_subdir = f"sweep/runs/run_{cfg['n_steps']}steps_{lr_str}"
+    # val_subdir: when multiple val configs share the same stage name, use this
+    # to create unique output subdirectories (e.g., "config_a", "config_b")
+    if cfg.get("val_subdir"):
+        stage_subdir = os.path.join(stage_subdir, cfg["val_subdir"])
     stage_dir = os.path.join(output_dir, "angles", cfg["angle"], stage_subdir)
     os.makedirs(stage_dir, exist_ok=True)
     raw_dir = os.path.join(stage_dir, "raw")
