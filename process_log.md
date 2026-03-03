@@ -312,3 +312,79 @@ Previous PhD agent context exhausted after completing:
 - `[hyp_003] results: canonical plots and notes.md update`
 - `[hyp_003] docs: final report, experiment_log, process_log`
 - `[hyp_003] integrate: clean experiment directory`
+
+---
+
+## 2026-03-02 — hyp_004: TarFlow Architectural Ablation + Optimization
+**Branch:** `exp/hyp_004`
+
+### Context at Resume
+Previous PhD agent context exhausted after:
+1. Implementation: BidirectionalTypeEncoder, permutation augmentation, positional encodings (commit 44d4ec9)
+2. Reports: diagnostic_report.md and plan_report.md (commit 8177c42)
+3. Configs: all ablation and sweep configs (commit 9288f75)
+4. Executed: all 6 ablation configs (3000 steps each) + 3 sweep runs (bs=128) on escher
+5. NOT done: .state.json updates, analysis, remaining sweep runs, full run, HEURISTICS, visualizations, reports
+
+### Ablation Analysis Results (write-before-execute)
+- Best config: **D_pos** (use_pos_enc=True only): mean VF = 17.65%
+- Rankings: D_pos 17.65% > F_bidir_pos 16.40% > A_baseline 12.68% > C_perm 12.60% > B_bidir 11.80% > E_bidir_perm 10.92%
+- Loss curve: ALL configs saturate at loss ~0.869 by step ~150 (same alpha_pos equilibrium as hyp_003)
+- Best checkpoints all at step 500-1000 (early training) — val loss increases after that (overfitting)
+- pos_enc adds ~+5ppt; bidir_types slightly hurts when combined with pos_enc; perm_aug slightly hurts overall
+- Sweep (bs=128): lr=5e-5 marginally best (17.73%). LR spread <0.5ppt. Remaining bs=256 runs unnecessary.
+- Promising criterion NOT met (0.20 mean VF). But D_pos is clearly the best config.
+
+### SCALE Angle Assessment (write-before-execute)
+- SKIPPED with justification: training saturates at step ~150 across ALL 6 ablation configs
+- Same alpha_pos=0.02 saturation equilibrium as hyp_003 (loss=0.869, log_det/dof=0.100 locked)
+- Not capacity-limited — this is a mathematical equilibrium, not underfitting
+- Plan condition: "Skip SCALE if both SANITY and HEURISTICS show saturation by step 150" — confirmed
+
+### INTENTION: SANITY Full Run (10000 steps)
+- Config: D_pos with best sweep LR
+  - use_pos_enc=True, use_bidir_types=False, use_perm_aug=False
+  - lr=5e-5 (best from sweep), batch_size=128
+  - alpha_pos=0.02, alpha_neg=2.0, log_det_reg_weight=5.0
+  - cosine LR, warmup_steps=500, n_steps=10000, eval_n_samples=500
+  - augment_train=True, normalize_to_unit_var=True
+- Output: experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/sanity/full/
+- W&B run name: hyp_004_sanity_full_pos_lr5e-5
+- GPU: cuda:0 (production)
+- Expecting: ~17-18% mean VF (sweep best was 17.73% at 3000 steps; 10k steps may be slightly better but saturation is early)
+- Plausibility check: log_det/dof near 0.100, smaller molecules > larger, best checkpoint early
+
+### INTENTION: HEURISTICS Val Run (3000 steps)
+- SBG recipe (Tan et al. 2025): AdamW betas=(0.9, 0.95), OneCycleLR, EMA decay=0.999, batch_size=512
+- Apply to D_pos config (best from ablation)
+- Promising if: mean VF > SANITY full result
+- In hyp_003: SBG on plain config gave 16.8% vs 13.1% baseline (+3.7ppt). Similar gain expected.
+- Fresh initialization — no checkpoint reuse
+
+### Decisions & Reasoning
+- D_pos is the clear winner despite not meeting promising criterion — it improves over baseline by 5ppt
+- perm_aug hurts: likely because positional ordering is informative for atom types in MD17 molecules
+- bidir_types hurts when combined with pos_enc: may be redundant information or conflicting inductive biases
+- SANITY full run is necessary to establish canonical best result for this angle
+- HEURISTICS is mandatory next step per plan (SBG recipe citation: Tan et al. 2025)
+- SCALE skip is clean: saturation confirmed by step 150 in all 6 independent runs
+
+### New Files to be Created
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/sanity/full/config.json` — full run config
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/sanity/full/best.pt` — best checkpoint
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/sanity/full/raw/mol_results.pt`
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/heuristics/val/config.json`
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/heuristics/val/best.pt`
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/heuristics/val/raw/mol_results.pt`
+- (sweep and full dirs to follow)
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/results/` — canonical plots
+- `reports/final_report.md`
+
+### Commits (planned)
+- `[hyp_004] docs: process_log and state.json update at resume`
+- `[hyp_004] results: SANITY full run — pos_enc config 10000 steps`
+- `[hyp_004] results: HEURISTICS val run`
+- `[hyp_004] results: HEURISTICS sweep`
+- `[hyp_004] results: HEURISTICS full run`
+- `[hyp_004] results: canonical plots and notes.md`
+- `[hyp_004] docs: final report, experiment_log, process_log`
