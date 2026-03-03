@@ -864,5 +864,14 @@ The 2x2 factorial (A=neither, B=PAD only, C=zero only, D=both) isolates the cont
 - `experiments/hypothesis/hyp_005_padding_aware_tarflow/reports/diagnostic_report.md` — Phase 1 result
 - `experiments/hypothesis/hyp_005_padding_aware_tarflow/reports/plan_report.md` — Phase 2 plan
 
+### Phase 0 Results
+- Config A diagnostic (500 steps, ethanol, alpha_pos=10.0, noise=0.05, no padding fixes):
+  log_det/dof explodes to 12.97 at step 500. VF=0%. Log-det exploitation confirmed.
+  Root cause: alpha_pos=10.0 is too permissive — model has free license to accumulate log-det.
+  und_001's 40.2% used Apple architecture (not src/model.py) — different gradient dynamics.
+  SANITY fix: use alpha_pos=1.0 for 4-config ablation. This is the correct stabilization level.
+
 ### Commits
-(to be filled after each commit)
+- f7cb104 — [hyp_005] code: Phase 0 code changes — causal mask fix, PAD token, query zeroing, Gaussian noise
+- f4d602a — [hyp_005] config: pre-run snapshot for diagnostic (Config A, ethanol, 500 steps)
+- (diagnostic results commit pending)
