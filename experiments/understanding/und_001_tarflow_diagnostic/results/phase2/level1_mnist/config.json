@@ -1,0 +1,21 @@
+{
+  "level": 1,
+  "name": "mnist",
+  "exp_id": "und_001",
+  "command": "DIAGNOSE",
+  "seed": 42,
+  "device": "cuda:0",
+  "git_hash": "7522813510b2ef4e589a2bf0895132485c9bfd97",
+  "in_channels": 1,
+  "img_size": 28,
+  "patch_size": 4,
+  "channels": 256,
+  "num_blocks": 4,
+  "layers_per_block": 4,
+  "steps": 20000,
+  "batch_size": 128,
+  "lr": 0.0005,
+  "noise_sigma": 0.05,
+  "grad_clip_norm": 1.0,
+  "lr_schedule": "cosine"
+}

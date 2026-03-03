@@ -1,0 +1,8 @@
+{
+  "best_loss": 0.9098218679428101,
+  "best_step": 4735,
+  "final_loss": 1.1628689765930176,
+  "mode_coverage": 0.886,
+  "n_params": 401416,
+  "elapsed_min": 2.9301742911338806
+}
