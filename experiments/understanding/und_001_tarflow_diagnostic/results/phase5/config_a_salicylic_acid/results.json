@@ -1,0 +1,13 @@
+{
+  "molecule": "salicylic_acid",
+  "config": "A",
+  "n_real": 16,
+  "seq_length": 16,
+  "pad_fraction": 0.0,
+  "best_loss": -2.001549482345581,
+  "best_step": 4821,
+  "final_loss": -1.9826281070709229,
+  "valid_fraction": 0.978,
+  "logdet_per_dof": 0.05167008499304454,
+  "n_params": 6361176
+}

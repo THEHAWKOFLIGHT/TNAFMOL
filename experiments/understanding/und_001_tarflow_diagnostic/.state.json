@@ -116,10 +116,22 @@
     },
     {
       "name": "phase5_best_config_validation",
-      "status": "in_progress",
+      "status": "completed",
       "acceptance": "Best config from Phase 4 tested on all 8 MD17 molecules. Valid_fraction scaling with molecule size reported. Compared against hyp_003 best (18.3%).",
       "started_at": "2026-03-02T10:00:00Z",
-      "result": null
+      "completed_at": "2026-03-02T16:30:00Z",
+      "result": {
+        "config_a_mean_vf": 0.982,
+        "config_b_mean_vf": 0.208,
+        "hyp003_reference": 0.183,
+        "config_b_beats_hyp003": true,
+        "ceiling_finding": "Architecture achieves 94-100% VF when padding removed",
+        "n_runs": 16,
+        "best_molecule_a": "naphthalene/benzene (100%)",
+        "worst_molecule_a": "aspirin (94.3%)",
+        "best_molecule_b": "aspirin (93.2%, no padding)",
+        "worst_molecule_b": "naphthalene/toluene (0%, aromatic collapse)"
+      }
     },
     {
       "name": "phase6_synthesis",

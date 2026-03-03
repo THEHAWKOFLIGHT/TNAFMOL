@@ -1,0 +1,13 @@
+{
+  "molecule": "naphthalene",
+  "config": "A",
+  "n_real": 18,
+  "seq_length": 18,
+  "pad_fraction": 0.0,
+  "best_loss": -2.029782772064209,
+  "best_step": 4723,
+  "final_loss": -2.0169169902801514,
+  "valid_fraction": 1.0,
+  "logdet_per_dof": 0.046526779068840875,
+  "n_params": 6363224
+}

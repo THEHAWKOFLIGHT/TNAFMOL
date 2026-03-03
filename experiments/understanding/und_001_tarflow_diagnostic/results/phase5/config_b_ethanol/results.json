@@ -1,0 +1,13 @@
+{
+  "molecule": "ethanol",
+  "config": "B",
+  "n_real": 9,
+  "seq_length": 21,
+  "pad_fraction": 0.5714285714285714,
+  "best_loss": -1.8919012546539307,
+  "best_step": 4874,
+  "final_loss": -1.8640187978744507,
+  "valid_fraction": 0.402,
+  "logdet_per_dof": 0.08751636257878057,
+  "n_params": 6364240
+}

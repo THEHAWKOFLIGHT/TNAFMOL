@@ -202,3 +202,48 @@ An architectural fix is needed (e.g., per-sample n_real normalization, or abando
 
 **Story fit:** CONFIRMS Phase 3 finding. Padding is the primary obstacle. No augmentation or regularization
 strategy tested can overcome the fundamental padding gradient imbalance.
+
+---
+
+## Phase 5 — Best Config Validation on All 8 MD17 Molecules
+
+**Date:** 2026-03-02
+**Branch:** `exp/und_001`
+**Status:** DONE
+**Type:** Understanding / DIAGNOSE
+
+**Purpose:** Extend the two best configs from Phase 4 to all 8 MD17 molecules to measure:
+(A) architecture ceiling when padding is removed (T=n_real), and
+(B) practical multi-molecule performance at T=21 with the best-known padded config.
+
+**Configs run:**
+- Config A: T=n_real (no padding), per-dim scale, noise=0.05, atom type embedding, 5000 steps
+- Config B: T=21 (padded), shared scale, noise=0.05, atom type embedding, 5000 steps
+- 8 molecules × 2 configs = 16 total runs on GPUs 5 (Config A) and 6 (Config B) in parallel
+
+**Results:**
+| Molecule | n_real | Config A VF | Config B VF | pad_frac_B |
+|----------|--------|-------------|-------------|------------|
+| aspirin | 21 | 94.3% | 93.2% | 0.000 |
+| naphthalene | 18 | 100.0% | 0.0% | 0.143 |
+| salicylic_acid | 16 | 97.8% | 8.1% | 0.238 |
+| toluene | 15 | 98.7% | 0.0% | 0.286 |
+| benzene | 12 | 100.0% | 2.9% | 0.429 |
+| uracil | 12 | 99.2% | 6.9% | 0.429 |
+| ethanol | 9 | 96.2% | 40.2% | 0.571 |
+| malonaldehyde | 9 | 99.8% | 15.4% | 0.571 |
+| **Mean** | — | **98.2%** | **20.8%** | — |
+
+**Key findings:**
+- Config A (no padding): 98.2% mean VF across all 8 molecules — architecture ceiling is very high
+- Config B (padded, T=21): 20.8% mean VF — beats hyp_003 best (18.3%) with noise + shared scale
+- Aspirin Config A ≈ Config B (94.3% vs 93.2%) — expected, aspirin has n_real=21 = T, no padding
+- Phase 4 linear model (VF = 95.3% - 96.4%×pad_frac) overestimates for non-ethanol molecules
+- Naphthalene and toluene collapse to 0% despite small padding fractions (14%, 29%)
+
+**Plausibility checks:** All pass. Ethanol Config B = 40.2% matches Phase 3 Step E exactly (reproducible). No NaN events.
+
+**W&B runs:** https://wandb.ai/kaityrusnelson1/tnafmol (group: `und_001`, prefix: `und_001_phase5_config*`)
+16 runs: 8 Config A (configA_*) + 8 Config B (configB_*) under group und_001
+
+**Story fit:** FITS — confirms padding as primary failure mode. Architecture itself is sound (98.2% ceiling). Config B improvement over hyp_003 is consistent with Phase 3/4 established best practices.

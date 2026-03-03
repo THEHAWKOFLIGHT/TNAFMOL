@@ -1,0 +1,13 @@
+{
+  "molecule": "benzene",
+  "config": "A",
+  "n_real": 12,
+  "seq_length": 12,
+  "pad_fraction": 0.0,
+  "best_loss": -2.2247469425201416,
+  "best_step": 4137,
+  "final_loss": -2.2150540351867676,
+  "valid_fraction": 1.0,
+  "logdet_per_dof": 0.07511897305647532,
+  "n_params": 6357080
+}

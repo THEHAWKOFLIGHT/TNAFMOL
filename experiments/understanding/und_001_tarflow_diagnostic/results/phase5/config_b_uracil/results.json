@@ -1,0 +1,13 @@
+{
+  "molecule": "uracil",
+  "config": "B",
+  "n_real": 12,
+  "seq_length": 21,
+  "pad_fraction": 0.42857142857142855,
+  "best_loss": -2.058575391769409,
+  "best_step": 4451,
+  "final_loss": -2.0259265899658203,
+  "valid_fraction": 0.069,
+  "logdet_per_dof": 0.07029094656308492,
+  "n_params": 6364240
+}

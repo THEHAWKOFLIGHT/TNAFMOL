@@ -1,0 +1,13 @@
+{
+  "molecule": "toluene",
+  "config": "B",
+  "n_real": 15,
+  "seq_length": 21,
+  "pad_fraction": 0.2857142857142857,
+  "best_loss": -1.9520728588104248,
+  "best_step": 4372,
+  "final_loss": -1.9426205158233643,
+  "valid_fraction": 0.0,
+  "logdet_per_dof": 0.0540323158370124,
+  "n_params": 6364240
+}

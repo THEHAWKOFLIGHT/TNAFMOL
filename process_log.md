@@ -632,5 +632,25 @@ Plan (written before execution):
 - `experiments/understanding/und_001_tarflow_diagnostic/results/phase5/` — results directory
 - `reports/phase5_report.md` — full Phase 5 analysis (written after runs complete)
 
+### Results Summary
+| Molecule | n_real | Config A VF | Config B VF |
+|----------|--------|-------------|-------------|
+| aspirin | 21 | 94.3% | 93.2% |
+| naphthalene | 18 | 100.0% | 0.0% |
+| salicylic_acid | 16 | 97.8% | 8.1% |
+| toluene | 15 | 98.7% | 0.0% |
+| benzene | 12 | 100.0% | 2.9% |
+| uracil | 12 | 99.2% | 6.9% |
+| ethanol | 9 | 96.2% | 40.2% |
+| malonaldehyde | 9 | 99.8% | 15.4% |
+| **Mean** | — | **98.2%** | **20.8%** |
+
+### Key Findings
+- Config A ceiling: 98.2% mean VF — architecture works without padding
+- Config B: 20.8% mean VF — beats hyp_003 (18.3%)
+- Aspirin sanity check passed: no padding → Config A ≈ Config B (94.3% vs 93.2%)
+- Phase 4 linear model overestimates for aromatic molecules (naphthalene, toluene collapse to 0%)
+
 ### Commits
-- (pending — will be added after runs complete)
+- e897f5c — [und_001] code: add train_phase5.py — best config validation on all 8 MD17 molecules
+- (results commit pending)

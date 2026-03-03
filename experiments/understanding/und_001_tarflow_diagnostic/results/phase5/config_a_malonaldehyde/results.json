@@ -1,0 +1,13 @@
+{
+  "molecule": "malonaldehyde",
+  "config": "A",
+  "n_real": 9,
+  "seq_length": 9,
+  "pad_fraction": 0.0,
+  "best_loss": -1.8618605136871338,
+  "best_step": 4730,
+  "final_loss": -1.8510116338729858,
+  "valid_fraction": 0.998,
+  "logdet_per_dof": 0.08652680732585766,
+  "n_params": 6354008
+}
