@@ -1,0 +1,11 @@
+{
+  "step": "a",
+  "description": "Raw atomic coordinates \u2014 pure Apple TarFlow1D on 9 ethanol atoms (no conditioning, no padding)",
+  "best_loss": -2.8272414207458496,
+  "best_step": 4977,
+  "final_loss": -2.8017334938049316,
+  "valid_fraction": 0.891,
+  "nll_per_dof": -2.8017334938049316,
+  "logdet_per_dof": 0.12187940729988943,
+  "n_params": 6337560
+}
