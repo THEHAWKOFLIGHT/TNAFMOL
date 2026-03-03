@@ -1,0 +1,42 @@
+{
+  "sweep_id": "kzkja8zy",
+  "sweep_url": "https://wandb.ai/kaityrusnelson1/tnafmol/sweeps/kzkja8zy",
+  "method": "grid",
+  "n_runs": 9,
+  "base_config": {
+    "angle": "heuristics",
+    "stage": "sweep",
+    "use_pad_token": true,
+    "zero_padding_queries": true,
+    "noise_sigma": 0.05,
+    "alpha_pos": 1.0,
+    "n_steps": 3000,
+    "molecules": ["ethanol"]
+  },
+  "results": [
+    {"log_det_reg_weight": 0.5, "lr": 1e-4, "vf": 0.000, "min_dist_mean": 0.232, "best_step": 500},
+    {"log_det_reg_weight": 0.5, "lr": 3e-4, "vf": 0.000, "min_dist_mean": 0.229, "best_step": 500},
+    {"log_det_reg_weight": 0.5, "lr": 5e-4, "vf": 0.000, "min_dist_mean": 0.218, "best_step": 500},
+    {"log_det_reg_weight": 1.0, "lr": 1e-4, "vf": 0.000, "min_dist_mean": 0.358, "best_step": 500},
+    {"log_det_reg_weight": 1.0, "lr": 3e-4, "vf": 0.000, "min_dist_mean": 0.375, "best_step": 500},
+    {"log_det_reg_weight": 1.0, "lr": 5e-4, "vf": 0.000, "min_dist_mean": 0.376, "best_step": 500},
+    {"log_det_reg_weight": 2.0, "lr": 1e-4, "vf": 0.037, "min_dist_mean": 0.455, "best_step": 500},
+    {"log_det_reg_weight": 2.0, "lr": 3e-4, "vf": 0.047, "min_dist_mean": 0.480, "best_step": 500},
+    {"log_det_reg_weight": 2.0, "lr": 5e-4, "vf": 0.037, "min_dist_mean": 0.491, "best_step": 500}
+  ],
+  "best_config": {
+    "log_det_reg_weight": 2.0,
+    "lr": 3e-4,
+    "vf": 0.047,
+    "min_dist_mean": 0.480,
+    "best_step": 500
+  },
+  "promising_criterion": "VF > 0.40 on ethanol",
+  "criterion_met": false,
+  "analysis": {
+    "pattern": "All runs plateau at step 500. log_det/dof equilibrium: 1/reg_weight. reg_weight=0.5->1.0 Angstrom equilibrium, reg_weight=1.0->0.5, reg_weight=2.0->0.25.",
+    "best_result": "VF=4.7% at reg_weight=2.0, lr=3e-4. Far below 40% criterion.",
+    "conclusion": "HEURISTICS sweep fails promising criterion. Skip full run. Proceed to SCALE (or write failure report).",
+    "scale_skip_justification": "Failure is training objective equilibrium (not capacity). Larger model would converge to same log_det equilibrium. SCALE does not address the root cause. See hyp_003/004 precedent."
+  }
+}

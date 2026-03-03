@@ -1,0 +1,10 @@
+{
+  "method": "grid",
+  "metric": {"name": "eval/ethanol/valid_fraction", "goal": "maximize"},
+  "parameters": {
+    "log_det_reg_weight": {"values": [0.5, 1.0, 2.0]},
+    "lr": {"values": [1e-4, 3e-4, 5e-4]}
+  },
+  "name": "hyp_005_heuristics_sweep",
+  "run_cap": 9
+}
