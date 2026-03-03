@@ -312,3 +312,115 @@ Previous PhD agent context exhausted after completing:
 - `[hyp_003] results: canonical plots and notes.md update`
 - `[hyp_003] docs: final report, experiment_log, process_log`
 - `[hyp_003] integrate: clean experiment directory`
+
+---
+
+## 2026-03-02 — und_001 Phase 2: Apple TarFlow Baseline Verification
+**Branch:** `exp/und_001`
+
+### Decisions & Reasoning (INTENTION — written before execution)
+- Implementing Apple TarFlow clean re-implementation in `src/tarflow_apple.py`
+- Must match Apple reference exactly: per-dim scale, output shift autoregression, no clamping
+- Training unified script `src/train_ladder.py` for levels 0-3
+- Level 0 (2D Gaussian): seq_length=2, in_channels=1 (NOT seq_length=1 which is degenerate)
+  - seq_length=1 → output shift always returns zeros → permanent identity → no learning
+  - seq_length=2 splits (x,y) into two scalar tokens with autoregressive conditioning
+- Level 1 (MNIST): channels=256, 4 blocks × 4 layers, patch_size=4 → 49 tokens × 16 dims
+- Level 2 (CIFAR-10): channels=768, 8 blocks × 4 layers, 228M params
+  - LR reduced to 1e-4 (3e-4 caused NaN at step 8 with large model)
+  - num_workers=0 to avoid DataLoader deadlock in background process
+- All three levels run on GPUs 5, 6, 7
+
+### Results (Phase 2)
+- Level 0: DONE. Best NLL=0.91, mode coverage=88.6%, 5000 steps, 2.9 min
+- Level 1: DONE. Best NLL=-2.245, bits/dim=-3.20, converged at 14400/20000 steps
+- Level 2: RUNNING. Loss 0.13→-2.01 in 1340 steps (in progress, GPU 7 at 100%)
+
+### New Files Created
+- `src/tarflow_apple.py` — Apple TarFlow clean re-implementation (TarFlowApple + TarFlow1D)
+- `src/train_ladder.py` — unified training script for levels 0-3
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase2/level0_2d_gaussian/` — Level 0 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase2/level1_mnist/` — Level 1 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase2/level2_cifar10/` — Level 2 outputs (in progress)
+- `experiments/understanding/und_001_tarflow_diagnostic/reports/ladder_report.md` — Phase 2 report
+
+### Commits
+- `94d7677` — [und_001] code: implement Apple TarFlow clean re-implementation (tarflow_apple.py)
+- `7522813` — [und_001] code: implement unified train_ladder.py for benchmark levels 0-2
+- `85687e2` — [und_001] code: fix Level 0 to use seq_length=2 in_channels=1
+- `aaf9d19` — [und_001] code: lower CIFAR-10 lr to 1e-4 to prevent early training instability
+- `4360f13` — [und_001] code: set cifar10 num_workers=0 to prevent dataloader deadlock
+- `15c29f0` — [und_001] results: Level 0 (88.6% mode coverage) and Level 1 MNIST (-3.20 bpd) complete
+
+### Notes
+- GPU 5: Level 0 (done), GPU 6: Level 1 (done), GPU 7: Level 2 (in progress)
+- W&B runs: Level 0 = nkuogsf4, Level 1 = n8fokhe6, Level 2 = rlvxam2e
+- Level 2 at 50k steps estimated ~8.3 hours; run in background
+- Plausibility checks PASS: Level 0 loss ~6.38 at init (correct for ring data with radius=5),
+  Level 1 loss negative (expected with [-1,1] normalization + noise augmentation),
+  Level 2 rapid improvement in first 1000 steps confirms no collapse or instability
+
+---
+
+## 2026-03-02 — und_001 Phase 3: Adaptation Ladder (Steps A-F)
+**Branch:** `exp/und_001`
+
+### INTENTION (write before execute)
+- Implementing the adaptation ladder: 6 incremental steps from Apple TarFlow (raw coords) to our full molecular model
+- PURPOSE: isolate which architectural change causes performance degradation (log-det exploitation)
+- HYPOTHESIS: Step E (shared scale) is the break point — ONE scalar log_scale per atom × 3 coords gives 3× leverage on log_det exploitation vs per-dimension scale
+- Each step trains from SCRATCH on ethanol (9 real atoms, 444k train samples) for 5000 steps
+- After all steps: write adaptation_report.md identifying the degradation point
+
+**Step plan:**
+- Step A: TarFlow1D on raw 9 ethanol atoms — pure Apple architecture, no modifications
+- Step B: Add atom type conditioning (nn.Embedding 4→16, concat to input)
+- Step C: Add padding (21 atoms) + causal+padding attention mask
+- Step D: Add Gaussian noise augmentation (sigma=0.05 to real atoms only)
+- Step E: Switch to shared scale — ONE scalar per atom applied to all 3 coords (KEY TEST)
+- Step F: Add stabilization (asymmetric clamp alpha_pos=0.1 + log_det_reg_weight=0.01)
+
+**Architecture for Step A:**
+- TarFlow1D: seq_length=9, in_channels=3 (raw xyz per atom)
+- channels=256, num_blocks=4, layers_per_block=2, head_dim=64
+- Apple loss: 0.5 * z.pow(2).mean() - logdets.mean()
+- NO clamping, NO log-det reg, NO noise, NO padding
+
+**Key insight being tested:**
+- Apple uses per-DIMENSION scale: xa shape (B, T, 3), log_det = -xa.mean([1,2])
+  → 3 independent scale params per atom, each contributing 1/3 to log_det per dof
+- Our model uses shared scale: 1 scalar per atom applied to all 3 coords, log_det = -3*s.mean([1,2])
+  → Same scalar × 3 means the optimizer gets 3× more benefit per unit of log_scale exploitation
+  → This concentration of influence per parameter is what we hypothesize causes the saturation equilibrium
+
+**MetaBlock modification for shared scale (Step E):**
+- MetaBlock proj_out produces in_channels*2 = 6 dims for NVP (xa=3 dims, xb=3 dims)
+- For shared scale: proj_out produces in_channels+1 = 4 dims (xa=1 shared scalar, xb=3 shift)
+- Forward: z = (x - xb) * exp(-xa.expand_as(x)); log_det = -xa.mean([1,2]) * 3
+- This requires modifying MetaBlock or creating a variant
+
+**Implementation plan:**
+- New file: src/train_phase3.py — unified runner for all 6 steps
+- New classes: MetaBlockSharedScale, TarFlow1DSharedScale for Step E
+- TarFlow1DMol for Steps B-F: extends TarFlow1D with atom type conditioning
+- Each step's model defined in train_phase3.py (no separate files per step)
+
+### New Files to be Created
+- `src/train_phase3.py` — Phase 3 adaptation ladder training script
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase3/step_a_raw_coords/`
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase3/step_b_atom_type/`
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase3/step_c_padding_mask/`
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase3/step_d_noise_aug/`
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase3/step_e_shared_scale/`
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase3/step_f_stabilization/`
+- `experiments/understanding/und_001_tarflow_diagnostic/reports/adaptation_report.md`
+
+### Commits (planned)
+- `[und_001] code: implement Phase 3 adaptation ladder (train_phase3.py)`
+- `[und_001] results: Phase 3 step_a complete`
+- `[und_001] results: Phase 3 step_b complete`
+- `[und_001] results: Phase 3 step_c complete`
+- `[und_001] results: Phase 3 step_d complete`
+- `[und_001] results: Phase 3 step_e complete (KEY TEST)`
+- `[und_001] results: Phase 3 step_f complete`
+- `[und_001] docs: adaptation_report.md`
