@@ -135,15 +135,26 @@
     },
     {
       "name": "phase6_synthesis",
-      "status": "pending",
+      "status": "completed",
       "acceptance": "Final synthesis answering: where does performance degrade, which adaptation matters most, is failure architectural or fundamental, recommended next experiment.",
-      "result": null
+      "result": {
+        "primary_failure": "padding (Step C: 89% → 2.7% VF)",
+        "architecture_ceiling": "98.2% mean VF across all 8 molecules (no padding)",
+        "multi_molecule_padded": "20.8% mean VF (vs hyp_003 18.3%)",
+        "failure_type": "interface (padding), not architectural",
+        "bugs_found": 4,
+        "recommended_next": "per-molecule TarFlow (T=n_real) for immediate DDPM comparison"
+      },
+      "completed_at": "2026-03-03T08:00:00Z"
     },
     {
       "name": "source_integration",
-      "status": "pending",
+      "status": "completed",
       "acceptance": "Any reusable code (tarflow_apple.py, train_ladder.py) promoted to src/. Experiment directory cleaned.",
-      "result": null
+      "result": {
+        "action": "N/A — all code already in src/. No .py in experiments/, no __pycache__ tracked. tarflow_apple.py and train_phase*.py remain as diagnostic deliverables."
+      },
+      "completed_at": "2026-03-03T08:05:00Z"
     },
     {
       "name": "merge_and_tag",
