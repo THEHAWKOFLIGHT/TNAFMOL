@@ -815,3 +815,54 @@ Plan (written before execution):
 ### Commits
 - e897f5c — [und_001] code: add train_phase5.py — best config validation on all 8 MD17 molecules
 - (results commit pending)
+
+---
+
+## 2026-03-03 — hyp_005 Phase 0: Code Changes (Padding-Aware TarFlow)
+**Branch:** `exp/hyp_005`
+
+### Decisions & Reasoning
+
+**Experiment context:** und_001 identified two padding corruption channels in the current TarFlow implementation:
+- Corruption A: padding atoms get atom_type_index=0 (H), contaminating hydrogen embedding
+- Corruption B: padding atoms run through full transformer, corrupting LayerNorm and input_proj gradients
+- Additionally: a causal mask bug (SOS token self-inclusive at i+1, creating non-triangular Jacobian) was never fixed in src/model.py
+
+**hyp_005 approach:** Fix the causal mask bug (required regardless) + test two targeted padding fixes in a 2x2 SANITY ablation:
+- use_pad_token=True: assign PAD_TOKEN_IDX=4 to padding atoms (separate embedding, not H=0)
+- zero_padding_queries=True: zero the input projection of padding atoms before attention (prevents padding from contributing to LayerNorm statistics and gradient flow)
+
+The 2x2 factorial (A=neither, B=PAD only, C=zero only, D=both) isolates the contribution of each fix.
+
+**Causal mask fix reasoning:** Current code uses `allowed[i, :i+1] = True` which allows position i+1 to attend to itself (column i+1 = atom i self-attending). This is self-inclusive and creates a non-triangular Jacobian — the log-determinant computation is wrong. The fix: use `allowed[i, :i] = True` (strictly causal, no self-attention except SOS at position 0).
+
+**PAD token reasoning:** With a separate PAD_TOKEN_IDX=4 and n_atom_types=5, padding atoms get their own embedding that can be learned to be irrelevant. Previously, padding atoms used H's embedding, corrupting hydrogen representation.
+
+**Query zeroing reasoning:** By zeroing padding queries after input_proj but before attention, padding atoms produce zero context vectors. LayerNorm then operates only on real atom activations. This prevents the gradient corruption channel identified in und_001.
+
+**Gaussian noise reasoning:** sigma=0.05 confirmed beneficial in und_001 Phase 3/4 (+11-39pp in padded regime). Now implemented cleanly in src/data.py as per-coordinate N(0, sigma^2) noise on real atoms only.
+
+**Config kept:** use_bidir_types=True, alpha_pos=10.0, alpha_neg=10.0, noise_sigma=0.05, augment_train=True, normalize_to_unit_var=True, log_det_reg_weight=0.0 (from und_001 Phase 3 Step E which achieved 40.2% VF).
+
+**alpha_pos=10.0 choice:** und_001 showed clamping is harmful in the padded regime (-30pp). Setting alpha_pos=10.0 (essentially unclamped at any realistic log_scale value) removes the saturation equilibrium without removing the functional form.
+
+### Phase 0 Plan (write-before-execute)
+1. Fix `_build_causal_mask()` in src/model.py: SOS at [0,0]=True, atoms at [i, :i]=True (strictly causal)
+2. Add `zero_padding_queries` param to TarFlowBlock and TarFlow
+3. Add PAD_TOKEN_IDX=4 constant to src/data.py
+4. Modify `encode_atom_types()` to accept pad_token_idx parameter
+5. Add `add_gaussian_noise()` function to src/data.py
+6. Update MD17Dataset and MultiMoleculeDataset to accept pad_token_idx and noise_sigma
+7. Update src/train.py: DEFAULT_CONFIG, model construction, dataset construction
+8. Write src/test_hyp005.py and run all 6 unit tests
+9. Commit code changes
+10. Run 500-step diagnostic (Config A + causal mask fix, ethanol, cuda:8)
+11. Write diagnostic_report.md
+
+### New Files Created (planned)
+- `src/test_hyp005.py` — unit tests for hyp_005 code changes
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/reports/diagnostic_report.md` — Phase 1 result
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/reports/plan_report.md` — Phase 2 plan
+
+### Commits
+(to be filled after each commit)

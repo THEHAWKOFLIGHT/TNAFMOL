@@ -11,12 +11,13 @@ Handles:
 - Soft equivariance augmentation: SO(3) rotation + CoM noise (hyp_003)
 - Global std normalization across all molecules (hyp_003)
 - Permutation augmentation: random atom ordering per sample (hyp_004)
+- PAD token support and Gaussian coordinate noise (hyp_005)
 
 Conventions:
 - Coordinates: Angstroms, CoM-centered, principal-axis-aligned
 - Energies: kcal/mol (raw DFT from MD17), no shifting
-- Atom types: one-hot [H, C, N, O] → indices {0, 1, 2, 3}
-- Padding: zeros for positions, zeros for atom types, mask=0 for padding
+- Atom types: one-hot [H, C, N, O] → indices {0, 1, 2, 3}; PAD → index 4 (hyp_005)
+- Padding: zeros for positions, PAD_TOKEN_IDX for atom types when use_pad_token=True, mask=0 for padding
 
 hyp_003 additions:
 - augment_positions(): random SO(3) rotation + CoM noise per sample
@@ -31,6 +32,15 @@ hyp_004 additions:
 - Permutation is applied per-sample in __getitem__, after global_std normalization
   but before SO(3) augmentation. Order: load → permute → augment.
   Note: global_std is a scalar that commutes with permutation, so the order is correct.
+
+hyp_005 additions:
+- PAD_TOKEN_IDX = 4: separate embedding index for padding atoms.
+  Previously padding used index 0 (H), corrupting hydrogen embeddings.
+  With use_pad_token=True in dataset classes, padding atoms get index 4 instead.
+- encode_atom_types(): accepts pad_token_idx parameter (default 0 for backward compat).
+- add_gaussian_noise(): per-coordinate N(0, sigma^2) noise on real atoms only.
+  Padding atoms stay at zero regardless of noise. Applied in __getitem__ before augmentation.
+- MD17Dataset and MultiMoleculeDataset accept pad_token_idx and noise_sigma params.
 """
 
 import os
@@ -236,6 +246,60 @@ def permute_atoms(
 
 
 # =============================================================================
+# Gaussian coordinate noise (hyp_005)
+# =============================================================================
+
+def add_gaussian_noise(
+    positions: torch.Tensor,
+    mask: torch.Tensor,
+    sigma: float,
+) -> torch.Tensor:
+    """Add per-coordinate Gaussian noise to real atom positions only.
+
+    Noise is N(0, sigma^2) independently on each (atom, coordinate) pair.
+    Padding atoms (mask=0) receive zero noise and stay at 0.
+
+    This differs from CoM noise in augment_positions() which adds the SAME noise
+    to all atoms. Here, each atom gets INDEPENDENT noise — this is coordinate-level
+    jitter that helps the model become robust to small position perturbations.
+
+    Reference: und_001 Phase 3/4 confirmed sigma=0.05 provides +11-39pp VF benefit
+    in the padded regime. This function provides the noise on real atoms only,
+    without perturbing padding positions.
+
+    Sanity checks:
+    - sigma=0: returns positions unchanged. CHECK (noise = 0 * N(0,1) = 0).
+    - Padding atoms: mask=0, so positions[pad_idx] = 0 + noise * 0 = 0. CHECK.
+    - Real atoms: noise ~ N(0, sigma^2), mean 0, std sigma. CHECK.
+    - Noise is independent per atom and coordinate — no correlation structure. CHECK.
+
+    Args:
+        positions: (N, 3) or (B, N, 3) positions — may include padding
+        mask: (N,) or (B, N) 1=real atom, 0=padding
+        sigma: standard deviation of per-coordinate Gaussian noise
+
+    Returns:
+        noisy positions, same shape as input
+    """
+    if sigma <= 0.0:
+        return positions
+
+    noise = torch.randn_like(positions) * sigma
+    # Zero noise for padding atoms
+    if positions.dim() == 2:
+        # (N, 3): mask is (N,)
+        mask_expanded = mask.unsqueeze(-1).float()  # (N, 1)
+    else:
+        # (B, N, 3): mask is (B, N) or (N,)
+        if mask.dim() == 1:
+            mask_expanded = mask.unsqueeze(0).unsqueeze(-1).float()  # (1, N, 1)
+        else:
+            mask_expanded = mask.unsqueeze(-1).float()  # (B, N, 1)
+
+    return positions + noise * mask_expanded
+
+
+# =============================================================================
 # Constants
 # =============================================================================
 
@@ -257,6 +321,11 @@ MAX_ATOMS = 21  # aspirin
 ATOMIC_NUM_TO_IDX = {1: 0, 6: 1, 7: 2, 8: 3}  # H, C, N, O
 ATOM_TYPE_NAMES = ["H", "C", "N", "O"]
 NUM_ATOM_TYPES = 4
+
+# PAD token index (hyp_005): separate embedding slot for padding atoms.
+# With n_atom_types=5 in the model, padding atoms use index 4 (distinct from H=0).
+# Default backward-compat behavior uses index 0 (H) for padding.
+PAD_TOKEN_IDX = 4
 
 # MD17 download URLs (newer format with ~50k-200k+ conformations per molecule)
 MD17_BASE_URL = "http://quantum-machine.org/gdml/data/npz"
@@ -516,19 +585,25 @@ def pad_positions(positions: np.ndarray, max_atoms: int = MAX_ATOMS) -> Tuple[np
     return padded, mask
 
 
-def encode_atom_types(atomic_numbers: np.ndarray, max_atoms: int = MAX_ATOMS) -> np.ndarray:
+def encode_atom_types(
+    atomic_numbers: np.ndarray,
+    max_atoms: int = MAX_ATOMS,
+    pad_token_idx: int = 0,
+) -> np.ndarray:
     """Encode atomic numbers as indices and pad.
 
     Args:
         atomic_numbers: (N_atoms,)
         max_atoms: Maximum number of atoms to pad to
+        pad_token_idx: Index to use for padding atoms. Default 0 (backward compat,
+            same as H). Use PAD_TOKEN_IDX=4 with n_atom_types=5 to give padding
+            atoms their own embedding distinct from hydrogen (hyp_005).
 
     Returns:
-        atom_type_indices: (max_atoms,) — index in {0,1,2,3} for real atoms, 0 for padding
-            (padding atoms are distinguished by the mask, not the type index)
+        atom_type_indices: (max_atoms,) — index in {0,1,2,3} for real atoms,
+            pad_token_idx for padding atoms.
     """
-    n_atoms = len(atomic_numbers)
-    indices = np.zeros(max_atoms, dtype=np.int64)
+    indices = np.full(max_atoms, fill_value=pad_token_idx, dtype=np.int64)
     for i, z in enumerate(atomic_numbers):
         if int(z) not in ATOMIC_NUM_TO_IDX:
             raise ValueError(f"Unknown atomic number: {z}")
@@ -930,6 +1005,12 @@ class MD17Dataset(torch.utils.data.Dataset):
         permute: If True, randomly permute real atom ordering per sample (hyp_004).
                  Applied BEFORE augmentation. Must clone atom_types since they are
                  shared per-molecule (line 899 in original data.py).
+        pad_token_idx: Index used for padding atoms in atom_types (hyp_005).
+                       Default 0 (backward compat = H). Use PAD_TOKEN_IDX=4 with
+                       n_atom_types=5 for a separate PAD embedding.
+        noise_sigma: If > 0, add per-coordinate Gaussian noise N(0, sigma^2) to real
+                     atoms only (hyp_005). Applied BEFORE SO(3) augmentation.
+                     sigma=0.05 is the und_001 best practice from Phase 3/4.
     """
 
     def __init__(
@@ -939,6 +1020,8 @@ class MD17Dataset(torch.utils.data.Dataset):
         augment: bool = False,
         global_std: Optional[float] = None,
         permute: bool = False,
+        pad_token_idx: int = 0,
+        noise_sigma: float = 0.0,
     ):
         assert split in ("train", "val", "test")
 
@@ -954,13 +1037,28 @@ class MD17Dataset(torch.utils.data.Dataset):
 
         self.positions = torch.from_numpy(positions)               # (N, 21, 3)
         self.energies = torch.from_numpy(data["energies"][idx])    # (N,)
-        self.atom_types = torch.from_numpy(data["atom_types"])     # (21,) — shared
-        self.atom_types_one_hot = torch.from_numpy(data["atom_types_one_hot"])  # (21, 4)
         self.mask = torch.from_numpy(data["mask"])                 # (21,)
         self.molecule = os.path.basename(data_dir)
         self.augment = augment
         self.global_std = global_std
         self.permute = permute
+        self.pad_token_idx = pad_token_idx
+        self.noise_sigma = noise_sigma
+
+        # Build atom_types with correct pad_token_idx for padding positions.
+        # data["atom_types"] was originally encoded with pad_token_idx=0.
+        # If pad_token_idx != 0, re-encode padding positions with the new index.
+        raw_atom_types = data["atom_types"]  # (21,) int64, encoding real atoms + 0-padded rest
+        n_real = int(self.mask.sum().item())
+        if pad_token_idx != 0:
+            # Replace 0-padding with pad_token_idx for positions beyond n_real
+            new_atom_types = raw_atom_types.copy()
+            new_atom_types[n_real:] = pad_token_idx
+            self.atom_types = torch.from_numpy(new_atom_types)    # (21,) — shared, with PAD token
+        else:
+            self.atom_types = torch.from_numpy(raw_atom_types)    # (21,) — shared
+
+        self.atom_types_one_hot = torch.from_numpy(data["atom_types_one_hot"])  # (21, 4)
 
     def __len__(self):
         return len(self.positions)
@@ -972,11 +1070,16 @@ class MD17Dataset(torch.utils.data.Dataset):
         # must clone before permutation to avoid corrupting other samples)
         atom_types = self.atom_types.clone()  # (21,)
 
-        # Apply permutation augmentation (hyp_004) — before SO(3) augmentation
+        # Apply permutation augmentation (hyp_004) — before noise and SO(3) augmentation
         # Note: global_std normalization is a scalar applied in __init__,
         # which commutes with permutation. Order is correct.
         if self.permute:
             positions, atom_types, _ = permute_atoms(positions, atom_types, self.mask)
+
+        # Apply Gaussian coordinate noise (hyp_005) — on real atoms only, before SO(3) aug
+        # sigma is in the NORMALIZED space (after global_std division if applicable)
+        if self.noise_sigma > 0.0:
+            positions = add_gaussian_noise(positions, self.mask, self.noise_sigma)
 
         # Apply SO(3) + CoM noise augmentation if enabled (training only)
         if self.augment:
@@ -985,7 +1088,7 @@ class MD17Dataset(torch.utils.data.Dataset):
         return {
             "positions": positions,                  # (21, 3)
             "energy": self.energies[idx],            # scalar
-            "atom_types": atom_types,                # (21,) — may be permuted
+            "atom_types": atom_types,                # (21,) — may be permuted, with PAD token
             "atom_types_one_hot": self.atom_types_one_hot,  # (21, 4) — NOT permuted (not used by model)
             "mask": self.mask,                       # (21,)
         }
@@ -1003,6 +1106,8 @@ class MultiMoleculeDataset(torch.utils.data.Dataset):
         augment: if True, apply random SO(3) + CoM noise (training only, hyp_003)
         global_std: if provided, normalize positions by this scalar (hyp_003)
         permute: if True, randomly permute atom ordering per sample (hyp_004)
+        pad_token_idx: padding atom type index (hyp_005, default 0 for backward compat)
+        noise_sigma: per-coord Gaussian noise std on real atoms (hyp_005, default 0.0 = off)
     """
 
     def __init__(
@@ -1013,6 +1118,8 @@ class MultiMoleculeDataset(torch.utils.data.Dataset):
         augment: bool = False,
         global_std: Optional[float] = None,
         permute: bool = False,
+        pad_token_idx: int = 0,
+        noise_sigma: float = 0.0,
     ):
         if molecules is None:
             molecules = list(MOLECULES.keys())
@@ -1027,7 +1134,10 @@ class MultiMoleculeDataset(torch.utils.data.Dataset):
             if not os.path.exists(os.path.join(data_dir, "dataset.npz")):
                 print(f"Warning: dataset not found for {mol} at {data_dir}, skipping")
                 continue
-            ds = MD17Dataset(data_dir, split, augment=augment, global_std=global_std, permute=permute)
+            ds = MD17Dataset(
+                data_dir, split, augment=augment, global_std=global_std,
+                permute=permute, pad_token_idx=pad_token_idx, noise_sigma=noise_sigma,
+            )
             self.datasets.append(ds)
             self.molecule_indices.extend([i] * len(ds))
             cumulative += len(ds)

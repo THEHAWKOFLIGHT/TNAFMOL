@@ -44,7 +44,7 @@ import wandb
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-from src.data import MD17Dataset, MultiMoleculeDataset, MOLECULES, MAX_ATOMS, compute_global_std
+from src.data import MD17Dataset, MultiMoleculeDataset, MOLECULES, MAX_ATOMS, compute_global_std, PAD_TOKEN_IDX
 from src.metrics import valid_fraction, energy_wasserstein, pairwise_distance_divergence, min_pairwise_distance
 from src.model import TarFlow, EMAModel, BidirectionalTypeEncoder
 
@@ -80,6 +80,11 @@ DEFAULT_CONFIG = {
     "use_bidir_types": False,    # bidirectional type conditioning
     "use_pos_enc": False,        # learned positional encodings per block
     "use_perm_aug": False,       # permutation augmentation on atoms
+
+    # hyp_005 padding-aware flags (all default False/0.0 for backward compatibility)
+    "use_pad_token": False,      # use PAD_TOKEN_IDX=4 for padding (requires n_atom_types=5)
+    "zero_padding_queries": False,  # zero padding atom queries before attention
+    "noise_sigma": 0.0,          # per-coord Gaussian noise std on real atoms (0.0 = off)
 
     # Training
     "n_steps": 500,          # default: diagnostic run
@@ -179,6 +184,7 @@ def evaluate_molecule(
     device: torch.device,
     temperature: float = 1.0,
     global_std: Optional[float] = None,
+    pad_token_idx: int = 0,
 ) -> Dict:
     """Evaluate the model on a single molecule.
 
@@ -190,6 +196,7 @@ def evaluate_molecule(
         temperature: sampling temperature
         global_std: if provided, multiply samples by this to denormalize
                     (model generates in normalized space, metrics need Angstroms)
+        pad_token_idx: index used for padding atoms in atom_types (hyp_005 default 0)
 
     Returns:
         dict with valid_fraction, energy_wasserstein, pairwise_distance_divergence
@@ -197,9 +204,17 @@ def evaluate_molecule(
     data = np.load(os.path.join(data_dir, "dataset.npz"))
     ref_stats = torch.load(os.path.join(data_dir, "ref_stats.pt"), weights_only=False)
 
-    # Get molecule info
-    atom_types = torch.from_numpy(data["atom_types"]).to(device)
-    mask = torch.from_numpy(data["mask"]).to(device)
+    # Get molecule info — apply correct pad_token_idx to padding positions
+    raw_atom_types = data["atom_types"]  # (21,) int64
+    mask_np = data["mask"]               # (21,) float32
+    n_real = int(mask_np.sum())
+    if pad_token_idx != 0:
+        atom_types_eval = raw_atom_types.copy()
+        atom_types_eval[n_real:] = pad_token_idx
+    else:
+        atom_types_eval = raw_atom_types
+    atom_types = torch.from_numpy(atom_types_eval).to(device)
+    mask = torch.from_numpy(mask_np).to(device)
     test_idx = data["test_idx"]
     ref_positions = data["positions"][test_idx]  # (N_test, 21, 3) — raw Angstroms
     ref_energies = data["energies"][test_idx]
@@ -213,8 +228,7 @@ def evaluate_molecule(
     if global_std is not None and global_std > 0:
         samples_np = samples_np * global_std
 
-    # Metrics
-    mask_np = mask.cpu().numpy()
+    # Metrics — use mask_np already defined above (avoids redundant cpu().numpy() call)
     vf, _ = valid_fraction(samples_np, mask_np)
 
     # Pairwise distance divergence (proxy for structural quality)
@@ -300,13 +314,18 @@ def train(cfg: dict):
     # Log test metric to confirm logging
     wandb.log({"init_check": 1.0}, step=0)
 
-    # Model — includes hyp_004 architectural flags
+    # Model — includes hyp_004 and hyp_005 architectural flags
+    # n_atom_types: 5 when use_pad_token=True (adds separate PAD embedding at index 4)
+    use_pad_token = cfg.get("use_pad_token", False)
+    n_atom_types = 5 if use_pad_token else 4
+
     model = TarFlow(
         n_blocks=cfg["n_blocks"],
         d_model=cfg["d_model"],
         n_heads=cfg["n_heads"],
         ffn_mult=cfg["ffn_mult"],
         atom_type_emb_dim=cfg["atom_type_emb_dim"],
+        n_atom_types=n_atom_types,
         dropout=cfg["dropout"],
         max_atoms=MAX_ATOMS,
         alpha_pos=cfg.get("alpha_pos", 0.02),
@@ -315,7 +334,9 @@ def train(cfg: dict):
         use_actnorm=cfg.get("use_actnorm", False),
         use_bidir_types=cfg.get("use_bidir_types", False),
         use_pos_enc=cfg.get("use_pos_enc", False),
+        zero_padding_queries=cfg.get("zero_padding_queries", False),
     ).to(device)
+    cfg["n_atom_types"] = n_atom_types  # log to wandb config
 
     n_params = model.count_parameters()
     print(f"Model parameters: {n_params:,}")
@@ -327,22 +348,30 @@ def train(cfg: dict):
         ema = EMAModel(model, decay=cfg.get("ema_decay", 0.999))
         print(f"EMA enabled with decay={cfg.get('ema_decay', 0.999)}")
 
-    # Dataset — with augmentation, normalization, and optional permutation
+    # Dataset — with augmentation, normalization, permutation, and hyp_005 options
     augment_train = cfg.get("augment_train", False)
     use_perm_aug = cfg.get("use_perm_aug", False)
+    pad_token_idx = PAD_TOKEN_IDX if use_pad_token else 0
+    noise_sigma = cfg.get("noise_sigma", 0.0)
+
     train_ds = MultiMoleculeDataset(
         data_root, split="train", molecules=molecules,
         augment=augment_train, global_std=global_std,
         permute=use_perm_aug,
+        pad_token_idx=pad_token_idx,
+        noise_sigma=noise_sigma,
     )
     val_ds = MultiMoleculeDataset(
         data_root, split="val", molecules=molecules,
         augment=False, global_std=global_std,
         permute=False,  # no permutation for validation
+        pad_token_idx=pad_token_idx,
+        noise_sigma=0.0,  # no noise for validation (evaluate clean data)
     )
 
     print(f"Train size: {len(train_ds):,}, Val size: {len(val_ds):,}")
     print(f"Augment train: {augment_train}, Permute: {use_perm_aug}, Global std: {global_std}")
+    print(f"Pad token: {use_pad_token} (idx={pad_token_idx}), Noise sigma: {noise_sigma}, Zero pad queries: {cfg.get('zero_padding_queries', False)}")
 
     train_loader = DataLoader(
         train_ds,
@@ -547,6 +576,7 @@ def train(cfg: dict):
                 n_samples=cfg.get("eval_n_samples", 500),
                 device=device,
                 global_std=global_std,
+                pad_token_idx=pad_token_idx,
             )
         mol_results[mol] = result
 
