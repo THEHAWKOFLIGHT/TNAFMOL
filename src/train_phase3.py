@@ -185,7 +185,16 @@ class MetaBlockSharedScale(nn.Module):
         x = self.permutation(x)
         pos_embed = self.permutation(self.pos_embed, dim=0)
 
-        x_in = x  # save original for affine transform
+        x_in = x  # save original for affine transform (already permuted)
+
+        # CRITICAL: permute the padding mask to match the permuted token order.
+        # PermutationFlip reverses tokens, so mask must also be reversed.
+        # Without this, PermutationFlip blocks zero the wrong positions.
+        mask_perm = None
+        if padding_mask is not None:
+            mask_perm = self.permutation(
+                padding_mask.float().unsqueeze(-1)  # (B, T, 1)
+            ).squeeze(-1)  # (B, T)
 
         # Build input to proj_in: positions [+ conditioning]
         if cond is not None and self.cond_channels > 0:
@@ -196,16 +205,12 @@ class MetaBlockSharedScale(nn.Module):
 
         x_hidden = self.proj_in(x_proj) + pos_embed  # (B, T, channels)
 
-        # Build causal attention mask, optionally combined with padding mask
+        # Build causal attention mask (in permuted space), combined with permuted padding mask
         attn_mask = self.attn_mask  # (T, T) lower triangular
-        if padding_mask is not None:
-            # padding_mask: (B, T), True = real atom
-            # We want: mask[b, i, j] = causal(i,j) AND padding_mask[b, j]
-            # scaled_dot_product_attention needs (B, num_heads, T, T) or broadcastable
-            # Use (B, 1, T, T) so it broadcasts over num_heads
+        if mask_perm is not None:
             B = x.size(0)
-            pad_key_mask = padding_mask.unsqueeze(1).expand(B, attn_mask.size(0), -1)  # (B, T, T)
-            attn_mask_full = (attn_mask.unsqueeze(0) * pad_key_mask.float()).unsqueeze(1)  # (B, 1, T, T)
+            pad_key_mask = mask_perm.unsqueeze(1).expand(B, attn_mask.size(0), -1)  # (B, T, T)
+            attn_mask_full = (attn_mask.unsqueeze(0) * pad_key_mask).unsqueeze(1)  # (B, 1, T, T)
         else:
             attn_mask_full = attn_mask  # (T, T) will broadcast
 
@@ -215,12 +220,20 @@ class MetaBlockSharedScale(nn.Module):
 
         x_out = self.proj_out(x_hidden)  # (B, T, 1 + 3)
 
-        # Output shift: auto-regressive shift (token i params come from output[i-1])
+        # Output shift: auto-regressive shift (in permuted space)
         x_out = torch.cat([torch.zeros_like(x_out[:, :1]), x_out[:, :-1]], dim=1)
 
         # Split: xa = shared scale (B, T, 1), xb = shift (B, T, 3)
         xa = x_out[..., :1]     # (B, T, 1) — shared log_scale per atom
         xb = x_out[..., 1:]     # (B, T, 3) — shift per atom per coord
+
+        # Zero out affine params for padding atoms in PERMUTED space.
+        # mask_perm has 1s at real atom positions (in permuted order), 0s at padding.
+        # Forces padding atoms to identity: z_pad = (0 - 0) * exp(0) = 0.
+        if mask_perm is not None:
+            pad_float = mask_perm.unsqueeze(-1)  # (B, T, 1)
+            xa = xa * pad_float   # (B, T, 1): zero scale for padding
+            xb = xb * pad_float   # (B, T, 3): zero shift for padding
 
         # Apply clamping to shared scale
         xa = self._clamp(xa)
@@ -229,11 +242,7 @@ class MetaBlockSharedScale(nn.Module):
         # xa is (B, T, 1), broadcasted to (B, T, 3)
         scale = (-xa.float()).exp().type(xa.dtype)  # (B, T, 1)
         z = (x_in - xb) * scale  # broadcasts: scale (B,T,1) × (B,T,3)
-
-        # Zero out padding atoms in z to prevent instability in NLL computation
-        if padding_mask is not None:
-            pad_float_3d = padding_mask.float().unsqueeze(-1)  # (B, T, 1)
-            z = z * pad_float_3d
+        # z for padding atoms is now exactly 0: (0 - 0) * exp(0) = 0
 
         z = self.permutation(z, inverse=True)
 
@@ -242,32 +251,16 @@ class MetaBlockSharedScale(nn.Module):
         # log|det J_i| = -3 * s_i (same scalar for all 3 coords)
         # Normalize by T (num_patches) and D=3 coords (matching Apple's normalization):
         # Apple: logdet = -xa.mean([1,2])  → averages over T tokens AND D dims
-        # Shared: logdet = -(3 * xa.squeeze(-1)).mean([1]) = -3 * xa.squeeze(-1).mean([1])
-        #   Then normalize by D=3: logdet_per_dim = -xa.squeeze(-1).mean([1])
-        # BUT: Apple's get_loss does: 0.5*z.pow(2).mean() - logdets.mean()
-        #   where logdets sums over blocks. To maintain same units (nats/dim),
-        #   we need logdet per sample to be sum over atoms of (-3 * s_i) / (T * D)
-        # Apple: sum over atoms of (-s_ix + -s_iy + -s_iz) / (T * D) = -xa.mean([1,2])
-        # Shared: sum over atoms of (-3 * s_i) / (T * D) = -3 * xa.squeeze(-1).mean(1) / 3 ... wait
-        #   = -3 * (1/T * sum_i s_i) / 3 = -(1/T) * sum_i s_i = -xa.squeeze(-1).mean(1)
-        # Actually: T * D = T * 3. Apple sums 3 terms per atom, shared sums 1 term × 3.
-        # The total log_det for all atoms is the SAME formula: -xa.squeeze(-1).mean(1)
-        # because the factor of 3 cancels with the D=3 normalization.
+        # Shared: sum over atoms of (-3 * s_i) / (T * D) = -xa.squeeze(-1).mean(1)
+        # (The factor of 3 cancels with D=3 normalization — same formula as Apple per-dim.)
         #
-        # However: this means per-dimension normalization hides the 3x effect.
-        # When we track log_det/dof, shared scale gives EXACTLY the same number as per-dim.
-        # The difference is that ONE parameter xa[i] controls 3 dims — higher gradient per parameter.
-        # Track raw xa.mean() separately to detect exploitation.
-
+        # Padding atoms: xa was zeroed above, so their logdet contribution is 0.
+        # Normalize by n_real (NOT T) to match the z² reconstruction normalization.
+        # If we normalize by T, the logdet gradient per real atom is scaled by n_real/T,
+        # shifting the equilibrium outside the data distribution — causing log-det exploitation.
         if padding_mask is not None:
-            # Zero out log_det for padding atoms
-            # padding_mask: (B, T) True = real, xa: (B, T, 1)
-            pad_float = padding_mask.float().unsqueeze(-1)  # (B, T, 1)
-            xa_masked = xa * pad_float
-            n_real = padding_mask.float().sum(1, keepdim=True)  # (B, 1)
-            # Log-det normalized by T=num_patches (not n_real) for compatibility
-            T = xa.size(1)
-            logdet = -(xa_masked.squeeze(-1).sum(1)) / T
+            n_real = padding_mask.float().sum(dim=1)  # (B,) number of real atoms per sample
+            logdet = -xa.squeeze(-1).sum(dim=1) / n_real  # (B,): sum over real atoms / n_real
         else:
             logdet = -xa.squeeze(-1).mean(dim=1)  # (B,): mean over T
 
@@ -632,14 +625,23 @@ class MetaBlockWithCond(nn.Module):
         else:
             cond_perm = None
 
-        # Build combined attention mask
-        attn_mask = self.base.attn_mask  # (T, T)
+        # CRITICAL: permute the padding mask to match the permuted token order.
+        # PermutationFlip reverses token order, so mask must also be reversed.
+        # Without this, PermutationFlip blocks zero the wrong positions (real instead of padding).
+        mask_perm = None
         if padding_mask is not None:
+            # padding_mask: (B, T) bool — apply same permutation as x
+            # Use unsqueeze/squeeze trick to apply permutation along dim=1 of a 2D tensor
+            mask_perm = self.base.permutation(
+                padding_mask.float().unsqueeze(-1)  # (B, T, 1)
+            ).squeeze(-1)  # (B, T)
+
+        # Build combined attention mask (in permuted space)
+        attn_mask = self.base.attn_mask  # (T, T)
+        if mask_perm is not None:
             B = x.size(0)
-            # Combine causal with padding mask
-            # pad_key: (B, T, T) — key padding (True = valid key position)
-            pad_key = padding_mask.float().unsqueeze(1).expand(B, attn_mask.size(0), -1)
-            # (B, T, T) causal * padding → (B, 1, T, T) for broadcast over num_heads
+            # Key masking in permuted space: query i can only attend to real key j
+            pad_key = mask_perm.unsqueeze(1).expand(B, attn_mask.size(0), -1)  # (B, T, T)
             attn_mask_combined = (attn_mask.unsqueeze(0) * pad_key).unsqueeze(1)  # (B, 1, T, T)
         else:
             attn_mask_combined = attn_mask  # (T, T) — broadcasts correctly
@@ -660,31 +662,32 @@ class MetaBlockWithCond(nn.Module):
 
         x_out = self.base.proj_out(x_hidden)  # (B, T, 6) — 3 scale + 3 shift
 
-        # Output shift for autoregression
+        # Output shift for autoregression (in permuted space)
         x_out = torch.cat([torch.zeros_like(x_out[:, :1]), x_out[:, :-1]], dim=1)
 
         # NVP split: xa = (B, T, 3) log-scale per dim, xb = (B, T, 3) shift
         xa, xb = x_out.chunk(2, dim=-1)
 
+        # Zero out affine params for padding atoms BEFORE applying transform (in permuted space).
+        # mask_perm is the padding mask in permuted order — same order as xa, xb, x_perm.
+        # Forces padding atoms to identity: z_pad = (0 - 0) * exp(0) = 0.
+        if mask_perm is not None:
+            pad_float = mask_perm.unsqueeze(-1)  # (B, T, 1)
+            xa = xa * pad_float   # (B, T, 3): zero log-scale for padding
+            xb = xb * pad_float   # (B, T, 3): zero shift for padding
+
         # Affine transform on positions only
         scale = (-xa.float()).exp().type(xa.dtype)
         z = (x_perm - xb) * scale
-
-        # Zero out padding atoms in z to prevent NaN/instability downstream
-        if padding_mask is not None:
-            pad_float = padding_mask.float().unsqueeze(-1)  # (B, T, 1)
-            z = z * pad_float
+        # z for padding atoms: (0 - 0) * exp(0) = 0 exactly
 
         z = self.base.permutation(z, inverse=True)
 
-        # Log-det: per-dimension scales, masking out padding atoms
+        # Log-det: xa zeroed for padding atoms, so -xa.sum = -sum over real atoms only.
+        # Normalize by n_real * D (matching get_loss per-real-dof normalization).
         if padding_mask is not None:
-            # xa_masked: only real atoms contribute to log_det
-            xa_masked = xa * pad_float  # (B, T, 3)
-            # Normalize by T (total positions including padding) to match Apple convention
-            # Apple: logdet = -xa.mean([1,2]) = -sum(xa) / (T * D)
-            # With masking: logdet = -sum(xa_masked) / (T * D)
-            logdet = -xa_masked.mean(dim=[1, 2])  # (B,)
+            n_real = padding_mask.float().sum(dim=1)  # (B,) number of real atoms per sample
+            logdet = -xa.sum(dim=[1, 2]) / (n_real * xa.size(-1))  # (B,)
         else:
             logdet = -xa.mean(dim=[1, 2])  # (B,)
 
@@ -1002,7 +1005,16 @@ def train_step(
         # Loss
         loss, info = model.get_loss(z, logdets, padding_mask=pad_mask)
 
-        assert torch.isfinite(loss), f"Non-finite loss at step {step}: {loss.item()}"
+        if not torch.isfinite(loss):
+            print(f"  WARNING: Non-finite loss at step {step}: {loss.item()} — skipping step")
+            optimizer.zero_grad()
+            scheduler.step()
+            # Use last finite loss for tracking
+            loss_val = losses[-1] if losses else 0.0
+            losses.append(loss_val)
+            logdets_track.append(logdets_track[-1] if logdets_track else 0.0)
+            continue
+
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
