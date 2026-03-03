@@ -78,8 +78,10 @@ class GaussianMixtureDataset(torch.utils.data.Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        # Return (B, 1, 2) shape — single "patch" of 2 dims
-        return self.data[idx].unsqueeze(0)  # (1, 2)
+        # Return (2, 1) shape — two scalar tokens (x, y split into seq of length 2)
+        # seq_length=2, in_channels=1: x-coord as token 0, y-coord as token 1
+        # Autoregressive: token 1 (y) can condition on token 0 (x)
+        return self.data[idx].unsqueeze(-1)  # (2, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -235,8 +237,8 @@ def save_gaussian_mixture_samples(model, device, exp_dir: Path, exp_id: str,
 
     model.eval()
     with torch.no_grad():
-        samples = model.sample(n_samples, device=device, temp=1.0)  # (B, 1, 2)
-        samples = samples.squeeze(1).cpu().numpy()  # (B, 2)
+        samples = model.sample(n_samples, device=device, temp=1.0)  # (B, 2, 1)
+        samples = samples.squeeze(-1).cpu().numpy()  # (B, 2)
 
     # True mode centers
     angles = np.linspace(0, 2 * np.pi, n_modes, endpoint=False)
@@ -337,10 +339,14 @@ def train_level0(args, cfg, device, exp_dir: Path):
     )
     loader_iter = iter(loader)
 
-    # Model: TarFlow1D with seq_length=1, in_channels=2
+    # Model: TarFlow1D with seq_length=2, in_channels=1
+    # Each 2D point (x, y) is split into two scalar tokens.
+    # This is the correct autoregressive design: token 1 (y) conditions on token 0 (x).
+    # seq_length=1 would be degenerate: the output shift always returns zeros,
+    # making the model permanently identity with no capacity to learn.
     model = TarFlow1D(
-        in_channels=2,
-        seq_length=1,
+        in_channels=1,
+        seq_length=2,
         channels=cfg['channels'],
         num_blocks=cfg['num_blocks'],
         layers_per_block=cfg['layers_per_block'],
@@ -381,7 +387,7 @@ def train_level0(args, cfg, device, exp_dir: Path):
             loader_iter = iter(loader)
             batch = next(loader_iter)
 
-        x = batch.to(device)  # (B, 1, 2)
+        x = batch.to(device)  # (B, 2, 1) — two scalar tokens
 
         # No noise augmentation for level 0 (clean 2D data)
         optimizer.zero_grad()
@@ -431,7 +437,8 @@ def train_level0(args, cfg, device, exp_dir: Path):
     model.eval()
     with torch.no_grad():
         samples = model.sample(2000, device=device, temp=1.0)
-        samples_np = samples.squeeze(1).cpu().numpy()
+        # samples shape: (B, 2, 1) → squeeze last dim → (B, 2)
+        samples_np = samples.squeeze(-1).cpu().numpy()
 
     # Check mode coverage: fraction of samples within 2*sigma of any mode center
     angles = np.linspace(0, 2 * np.pi, cfg['n_modes'], endpoint=False)
@@ -849,9 +856,10 @@ def main():
             'git_hash': git_hash,
             # Data
             'n_modes': args.n_modes,
-            # Model
-            'in_channels': 2,
-            'seq_length': 1,
+            # Model — seq_length=2, in_channels=1: (x,y) as two scalar tokens
+            # seq_length=1 would be degenerate (output shift always gives zeros)
+            'in_channels': 1,
+            'seq_length': 2,
             'channels': args.channels or 64,
             'num_blocks': args.num_blocks or 4,
             'layers_per_block': args.layers_per_block or 2,
