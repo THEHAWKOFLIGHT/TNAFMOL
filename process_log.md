@@ -874,4 +874,79 @@ The 2x2 factorial (A=neither, B=PAD only, C=zero only, D=both) isolates the cont
 ### Commits
 - f7cb104 — [hyp_005] code: Phase 0 code changes — causal mask fix, PAD token, query zeroing, Gaussian noise
 - f4d602a — [hyp_005] config: pre-run snapshot for diagnostic (Config A, ethanol, 500 steps)
-- (diagnostic results commit pending)
+- be5bc49 — [hyp_005] results: diagnostic run — log-det exploitation confirmed, plan written
+- c810bca — [hyp_005] docs: plan report
+- 1d1486c — [hyp_005] config: SANITY 4 configs + val_subdir support in train.py
+
+---
+
+## 2026-03-03 — hyp_005 resumed: SANITY ablation + HEURISTICS
+**Branch:** `exp/hyp_005`
+
+### Context at Resume
+Previous PhD agent context exhausted after:
+1. Phase 0 code changes committed (f7cb104)
+2. Diagnostic run completed (500 steps, ethanol, Config A): log_det/dof=12.97, VF=0%
+3. Plan report written (plan_report.md)
+4. SANITY 4-config ablation started: Config A (1000 steps, alpha_pos=1.0) completed with VF=0%
+5. Configs B, C, D not yet run
+
+### Decisions & Reasoning
+
+**SANITY ablation continued:** Ran Configs B, C, D in parallel on GPUs 2, 3, 4 (all free with 272 MiB).
+GPU fix reminder: `CUDA_VISIBLE_DEVICES=N python3.10 src/train.py --device cuda:0`
+
+**SANITY results:**
+| Config | PAD token | Query zeroing | VF | log_det/dof |
+|--------|-----------|---------------|-----|-------------|
+| A | No | No | 0.000 | 7.26 |
+| B | Yes | No | 0.000 | 7.3 |
+| C | No | Yes | 0.000 | 7.3 |
+| D | Yes | Yes | 0.000 | 7.3 |
+
+Identical trajectories across all 4 configs — PAD token and query zeroing have ZERO effect on VF.
+Root cause: log-det exploitation at training dynamics level, not padding corruption.
+alpha_pos=1.0 allows log_det/dof to grow to 7.3 — still too large for valid samples.
+
+**HEURISTICS angle reassessment:**
+Original plan proposed masked LayerNorm. After SANITY results, this is clearly inapplicable:
+- Config D (full padding mitigation including query zeroing) still gives VF=0%
+- Query zeroing already silences padding from transformer — masked LayerNorm would be redundant
+- The failure is log-det exploitation, not LayerNorm contamination from padding
+
+**Applicable HEURISTICS: log_det_reg_weight > 0 (Andrade et al. 2024 / hyp_003)**
+- Directly addresses diagnosed failure mode (log-det exploitation)
+- Already implemented in src/model.py and src/train.py (no code changes needed)
+- Proven effective: hyp_003 achieved VF=29% on ethanol with log_det_reg_weight=5
+- Literature: Andrade et al. 2024 (cited in src/model.py line 875)
+- Applied to Config D (full padding mitigation) to cleanly test whether padded multi-molecule training
+  benefits from the log-det control that worked for single-molecule
+
+**HEURISTICS val (1000 steps, ethanol, log_det_reg_weight=2.0, lr=3e-4, Config D):**
+- W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/khw1bzkb
+- VF=0.027 (2.7%) — significant improvement from 0% (Config D with log_det_reg_weight=0)
+- log_det/dof=0.25 — stabilized! (vs 7.3 without regularization)
+- min_dist_mean=0.44 Å (vs 0.001 Å without regularization) — model is generating real geometry
+- BUT: grad_norm → 0 by step 200 — model converged/plateaued extremely early
+- Best checkpoint at step 200. Loss flat from step 200 to 1000.
+- Diagnosis: log_det_reg_weight=2.0 may be too strong, or 1000 steps not enough to escape plateau
+
+**HEURISTICS sweep design:**
+Grid search: log_det_reg_weight=[0.5, 1.0, 2.0] × lr=[1e-4, 3e-4, 5e-4], 3000 steps each.
+Note from hyp_003: best was log_det_reg_weight=5, lr=1e-4. But hyp_003 was single-molecule (no padding).
+Multi-molecule with padding may benefit from weaker regularization.
+W&B Sweep URL: https://wandb.ai/kaityrusnelson1/tnafmol/sweeps/kzkja8zy
+Sweep ID: kzkja8zy
+Agents on GPU 2 (CUDA_VISIBLE_DEVICES=2).
+
+### New Files Created
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/angles/sanity/val/config_a/config.json`
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/angles/sanity/val/config_b/config.json`
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/angles/sanity/val/config_c/config.json`
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/angles/sanity/val/config_d/config.json`
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/angles/heuristics/val/config.json`
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/angles/heuristics/sweep/sweep_config.json`
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/angles/heuristics/sweep/run_sweep.py`
+
+### Commits
+- 4a086f2 — [hyp_005] results: SANITY 4-config ablation complete — all VF=0, heuristics config added

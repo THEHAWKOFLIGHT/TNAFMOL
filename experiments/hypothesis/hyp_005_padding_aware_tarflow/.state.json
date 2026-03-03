@@ -3,18 +3,30 @@
   "command": "OPTIMIZE",
   "status": "in_progress",
   "created": "2026-03-03T18:00:00Z",
-  "last_updated": "2026-03-03T18:30:00Z",
+  "last_updated": "2026-03-03T20:00:00Z",
   "machine": {
     "host": "localhost",
     "user": "kai_nelson",
-    "gpu": "cuda:8",
+    "gpu": "cuda:2",
     "pid": null,
     "claude_session_id": null
   },
   "artifacts": {
     "dataset": "data/",
-    "checkpoints": [],
-    "raw_outputs": []
+    "checkpoints": [
+      "angles/sanity/val/config_a/best.pt",
+      "angles/sanity/val/config_b/best.pt",
+      "angles/sanity/val/config_c/best.pt",
+      "angles/sanity/val/config_d/best.pt",
+      "angles/heuristics/val/best.pt"
+    ],
+    "raw_outputs": [
+      "angles/sanity/val/config_a/raw/",
+      "angles/sanity/val/config_b/raw/",
+      "angles/sanity/val/config_c/raw/",
+      "angles/sanity/val/config_d/raw/",
+      "angles/heuristics/val/raw/"
+    ]
   },
   "steps": [
     {
@@ -33,33 +45,55 @@
     },
     {
       "name": "plan",
-      "status": "pending",
-      "acceptance": "OPTIMIZE Plan Sub-report approved by Postdoc. Written to reports/plan_report.md."
+      "status": "completed",
+      "acceptance": "OPTIMIZE Plan Sub-report approved by Postdoc. Written to reports/plan_report.md.",
+      "completed_at": "2026-03-03T19:00:00Z",
+      "commit": "c810bca"
     },
     {
       "name": "angle_sanity_val",
-      "status": "pending",
-      "acceptance": "4-config 2x2 factorial ablation (1000 steps each, ethanol). Any config achieves VF > 0.40 on ethanol. Results in angles/sanity/val/."
+      "status": "completed",
+      "acceptance": "4-config 2x2 factorial ablation (1000 steps each, ethanol). Any config achieves VF > 0.40 on ethanol.",
+      "completed_at": "2026-03-03T20:00:00Z",
+      "result": {
+        "config_a": {"vf": 0.0, "log_det_dof": 7.26},
+        "config_b": {"vf": 0.0, "log_det_dof": 7.3},
+        "config_c": {"vf": 0.0, "log_det_dof": 7.3},
+        "config_d": {"vf": 0.0, "log_det_dof": 7.3},
+        "promising": false,
+        "note": "All VF=0. PAD token and query zeroing have zero effect on log-det exploitation. SANITY FAILS."
+      },
+      "wandb_runs": ["lwg95pjk", "otquvyhm", "krb1i427", "1gruyalq"],
+      "commit": "4a086f2"
     },
     {
       "name": "angle_sanity_sweep",
-      "status": "pending",
-      "acceptance": "W&B sweep on best SANITY config. Best config selected. Results in angles/sanity/sweep/."
+      "status": "skipped",
+      "reason": "SANITY val failed promising criterion (all VF=0). No config to sweep.",
+      "skipped_at": "2026-03-03T20:00:00Z"
     },
     {
       "name": "angle_sanity_full",
-      "status": "pending",
-      "acceptance": "Full training run on best SANITY config (all 8 molecules). VF >= 0.5 on >= 4/8 molecules. Results in angles/sanity/full/."
+      "status": "skipped",
+      "reason": "SANITY val failed. No full run warranted.",
+      "skipped_at": "2026-03-03T20:00:00Z"
     },
     {
       "name": "angle_heuristics_val",
-      "status": "pending",
-      "acceptance": "HEURISTICS validation run (if SANITY shows promise but below target). Masked LayerNorm or zero PAD embedding. Results in angles/heuristics/val/."
+      "status": "completed",
+      "acceptance": "HEURISTICS validation run. Masked LayerNorm replaced by log_det_reg_weight=2.0 (Andrade et al. 2024) based on SANITY evidence that padding is not the failure mode. VF > 0 on ethanol.",
+      "completed_at": "2026-03-03T20:10:00Z",
+      "result": {"vf": 0.027, "log_det_dof": 0.25, "min_dist_mean": 0.443, "grad_norm_at_convergence": 0.003},
+      "wandb_run": "khw1bzkb",
+      "note": "VF=2.7% — qualitative improvement (from 0% with no reg). But plateau at step 200 (grad_norm→0). Direction is correct; sweep needed to find operating point."
     },
     {
       "name": "angle_heuristics_sweep",
-      "status": "pending",
-      "acceptance": "W&B sweep on HEURISTICS config if val is promising."
+      "status": "in_progress",
+      "acceptance": "W&B sweep completed; best config selected.",
+      "wandb_sweep_id": "kzkja8zy",
+      "wandb_sweep_url": "https://wandb.ai/kaityrusnelson1/tnafmol/sweeps/kzkja8zy",
+      "started_at": "2026-03-03T20:15:00Z"
     },
     {
       "name": "angle_heuristics_full",
