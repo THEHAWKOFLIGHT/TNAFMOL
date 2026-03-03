@@ -3,7 +3,7 @@
   "command": "OPTIMIZE",
   "status": "in_progress",
   "created": "2026-03-03T18:00:00Z",
-  "last_updated": "2026-03-03T18:00:00Z",
+  "last_updated": "2026-03-03T18:30:00Z",
   "machine": {
     "host": "localhost",
     "user": "kai_nelson",
@@ -19,8 +19,10 @@
   "steps": [
     {
       "name": "code_changes",
-      "status": "pending",
-      "acceptance": "Causal mask bug fixed in src/model.py (strictly causal). PAD_TOKEN_IDX=4 added to src/data.py. Query zeroing added to TarFlowBlock. Gaussian noise function added to src/data.py. n_atom_types=5 when use_pad_token=True. Config integration in src/train.py. All unit tests pass."
+      "status": "completed",
+      "acceptance": "Causal mask bug fixed in src/model.py (strictly causal). PAD_TOKEN_IDX=4 added to src/data.py. Query zeroing added to TarFlowBlock. Gaussian noise function added to src/data.py. n_atom_types=5 when use_pad_token=True. Config integration in src/train.py. All unit tests pass.",
+      "completed_at": "2026-03-03T18:30:00Z",
+      "commit": "f7cb104"
     },
     {
       "name": "diagnostic",
