@@ -41,7 +41,7 @@ See `reports/ladder_report.md`.
 | C | + Padding (T=21, n_real=9) | -2.825 | 2.7% | 0.122 |
 | D | + Noise augmentation (sigma=0.05) | -1.902 | 14.3% | 0.088 |
 | E | Shared scale (1 scalar/atom, KEY TEST) | -1.892 | 40.2% | 0.088 |
-| F | + Stabilization (clamp alpha=0.1/2.0 + reg=0.01) | -3.047 | 0.0% | 0.113 |
+| F | + Stabilization (clamp alpha=0.1/2.0 + reg=0.01) | -1.887 | 10.4% | 0.087 |
 
 See `results/phase3/step_*/results.json` for full results.
 
@@ -68,9 +68,10 @@ Phase 3 reveals the molecular adaptation failure cascade:
    saturation exploitation. The improvement may reflect shared scale's inductive bias toward
    isotropic coordinate scaling — appropriate for 3D molecular coordinates.
 
-4. **Clamping destroys performance** (0.0% VF). Tight alpha_pos=0.1 prevents the model from
-   learning necessary scale transformations. The clamping was designed for shared scale exploitation
-   in hyp_002/hyp_003 but is too restrictive when the base model works correctly.
+4. **Clamping reduces performance** (Step F: 40.2% → 10.4% VF). Note: the FIRST Step F run used
+   the buggy T*D normalization and produced VF=0.0 (degenerate constant equilibrium). The SECOND run
+   (correct n_real*D normalization) achieves 10.4%. The clamping limits but does not destroy learning.
+   Alpha_pos=0.1 constrains scale contraction significantly but allows some structural learning.
 
 5. **Loss and VF are decoupled in the padded regime.** Steps A and C have nearly identical best_loss
    (-2.83) but radically different VF (89% vs 3%). The NLL does not reflect pairwise distance validity.

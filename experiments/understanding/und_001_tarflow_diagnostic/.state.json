@@ -86,9 +86,9 @@
       "name": "phase3_step_f_stabilization",
       "status": "completed",
       "acceptance": "Add asymmetric clamping + log-det regularization. 5000 steps on ethanol. Compare with/without per-dim scale.",
-      "result": {"best_loss": -3.047, "valid_fraction": 0.0, "nll_per_dof": -3.047, "logdet_per_dof": 0.113, "n_params": 6364240},
-      "completed_at": "2026-03-03T06:00:00Z",
-      "notes": "Clamping prevents training at all — VF=0.0. Loss converges at -3.047 but model stuck in identity-like equilibrium. Clamping too tight (alpha_pos=0.1) prevents necessary scale learning."
+      "result": {"best_loss": -1.887, "valid_fraction": 0.104, "nll_per_dof": -1.857, "logdet_per_dof": 0.087, "n_params": 6364240},
+      "completed_at": "2026-03-03T06:30:00Z",
+      "notes": "CORRECTED: first run (09c565f, wrong normalization) gave VF=0.0. Second run (901d6c5, correct n_real normalization) gives VF=10.4%. Clamping reduces VF from 40.2% (Step E) to 10.4% — significant degradation but not total failure. The clamping limits scale learning but doesn't prevent it entirely with correct normalization."
     },
     {
       "name": "phase4_ablation_matrix",

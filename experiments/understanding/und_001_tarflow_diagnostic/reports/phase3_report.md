@@ -26,7 +26,7 @@ data (ethanol, 9 atoms, MD17 dataset). Each step adds ONE change and measures th
 | C | + Padding (T=21, n_real=9) | -2.825 | 2.7% | 0.122 | `und_001_phase3_step_c` |
 | D | + Noise augmentation (sigma=0.05) | -1.902 | 14.3% | 0.088 | `und_001_phase3_step_d` |
 | E | Shared scale (1 scalar/atom) KEY TEST | -1.892 | 40.2% | 0.088 | `und_001_phase3_step_e` |
-| F | + Stabilization (clamp + reg=0.01) | -3.047 | 0.0% | 0.113 | `und_001_phase3_step_f` |
+| F | + Stabilization (clamp + reg=0.01) | -1.887 | 10.4% | 0.087 | `und_001_phase3_step_f` |
 
 **Architecture:** `TarFlow1DMol`, channels=256, num_blocks=4, layers_per_block=2, head_dim=64
 **Training:** 5000 steps, batch_size=256, lr=5e-4, cosine schedule, seed=42
@@ -139,30 +139,27 @@ Distribution much closer to reference than Steps C and D.
 ### Step F — Stabilization (Asymmetric Clamp + Log-Det Reg)
 
 **Config:** same as E + asymmetric clamp (alpha_pos=0.1, alpha_neg=2.0) + log-det reg weight=0.01
-**Result:** best_loss=-3.047, valid_fraction=**0.0%**, logdet/dof=0.113
+**Result:** best_loss=-1.887, valid_fraction=**10.4%**, logdet/dof=0.087
 
-**Clamping destroys performance.** With asymmetric clamping:
-- Loss is lower (-3.047) — looks better numerically
-- Valid fraction = 0.0% — no valid structures
+**Important correction:** The first Step F run used the BUGGY T*D logdet normalization (commit 09c565f)
+and produced VF=0.0, loss=-3.047 — a degenerate constant equilibrium where the model converged
+immediately to a near-identity transform. The second run with correct normalization (n_real*D,
+commit 901d6c5) produces VF=10.4%, loss=-1.857 — comparable to Step D but worse than Step E.
 
-The clamping limits scale to exp(-0.1) ≈ 0.905 minimum (contraction). This prevents the model
-from learning the scale transformations needed to map from isotropic Gaussian noise to the
-non-isotropic molecular coordinate distribution. The model converges to a near-identity transform
-where logdet/dof stays constant and the latent space doesn't learn.
+With correct normalization, clamping reduces VF from 40.2% (Step E) to 10.4%. The model
+still learns, but the tight alpha_pos=0.1 clamp limits scale contraction to exp(-0.1) ≈ 0.905
+per block, which constrains the flow's expressivity.
 
-This is the same saturation equilibrium failure seen in hyp_003 — but caused by the clamping
-PREVENTING learning, not by the optimizer EXPLOITING log-det.
-
-Note: Step F trained stably (no NaN) even at lr=5e-4. The clamping provides gradient bounds
-that prevent early-training instability. But stability is not sufficient for learning.
+The clamping does prevent NaN at lr=5e-4 for this architecture — useful for stability but
+the cost to VF is significant.
 
 ![Loss curve](../results/phase3/step_f_stabilization/loss_curve.png)
-**Step F training loss** — Loss converges to -3.047 immediately (step ~500) and stays flat for
-4500 more steps. The model is stuck in a shallow local minimum.
+**Step F training loss** — Loss converges to -1.857. Similar dynamics to Step E. No early
+instability (clamping provides gradient bounds).
 
 ![Pairwise distance](../results/phase3/step_f_stabilization/pairwise_dist.png)
-**Step F pairwise distances** — Valid fraction 0.0%. The model cannot generate valid structures
-at all — worse than even random noise.
+**Step F pairwise distances** — Valid fraction 10.4%. Clamping reduces VF relative to Step E (40.2%).
+Distribution shows most samples still have atomic overlaps.
 
 ---
 
@@ -194,10 +191,15 @@ Both are fixed in the current implementation.
 Steps C and D both use per-dim scale but D (with noise) achieves 5× more valid fraction.
 The noise augmentation is more impactful than the scale parameterization choice.
 
-### Finding 4: Clamping prevents learning
+### Finding 4: Clamping reduces (but does not prevent) learning with correct normalization
 
-Step F's clamping creates a stability-performance tradeoff: stable training but no structural
-learning. For molecular conformations, unclamped scale learning is necessary.
+With correct n_real*D logdet normalization, Step F achieves 10.4% VF (vs 40.2% for unclamped Step E).
+Clamping is a significant cost to performance but not total failure.
+
+Note: The initial Step F run used buggy T*D normalization and appeared to give 0% VF — an artifact
+of the wrong normalization creating a degenerate constant equilibrium that also happened to be
+stable (clamping prevented NaN). With correct normalization, clamping is a moderate constraint,
+not a total blocker.
 
 ---
 

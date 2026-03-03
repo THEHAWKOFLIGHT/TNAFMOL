@@ -1,0 +1,11 @@
+{
+  "step": "f",
+  "description": "Stabilization \u2014 asymmetric clamp (alpha_pos=0.1) + log-det regularization (weight=0.01)",
+  "best_loss": -1.886919617652893,
+  "best_step": 4686,
+  "final_loss": -1.8568713665008545,
+  "valid_fraction": 0.104,
+  "nll_per_dof": -1.8568713665008545,
+  "logdet_per_dof": 0.08735234569620204,
+  "n_params": 6364240
+}
