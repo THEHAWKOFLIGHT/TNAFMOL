@@ -1,0 +1,12 @@
+{
+  "config": 1,
+  "descriptor": "T9_nonoise_shared",
+  "description": "T=9, no noise, shared scale \u2014 does shared scale help/hurt without padding?",
+  "best_loss": -2.7893896102905273,
+  "best_step": 4840,
+  "final_loss": -2.7412452697753906,
+  "valid_fraction": 0.936,
+  "nll_per_dof": -2.7412452697753906,
+  "logdet_per_dof": 0.12021140292838767,
+  "n_params": 6351952
+}
