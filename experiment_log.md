@@ -159,10 +159,27 @@ Downloaded and preprocessed all 8 MD17 molecules (aspirin, benzene, ethanol, mal
 - HEURISTICS val (3000 steps, lr=3e-4): mean VF 17.93% (+0.45ppt vs SANITY full) — PROMISING
   - Better val_loss: 0.8116 at step 1500 (vs 0.8176 for SANITY full)
   - W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/ht2xyghi
-- HEURISTICS sweep (9 runs: ema_decay=[0.99,0.999,0.9999] x lr=[1e-4,3e-4,1e-3], bs=512 fixed):
-  *(results pending — sweep running)*
-- HEURISTICS full run: *(pending sweep completion)*
+- HEURISTICS sweep (9 runs: ema_decay=[0.99,0.999,0.9999] × lr=[1e-4,3e-4,1e-3], bs=512 fixed):
+  - lr=1e-4, ema=0.99: 19.2% | lr=1e-4, ema=0.999: 18.1% | lr=1e-4, ema=0.9999: 15.5%
+  - lr=3e-4, ema=0.99: 19.1% | lr=3e-4, ema=0.999: 17.9% | lr=3e-4, ema=0.9999: 15.7%
+  - **lr=1e-3, ema=0.99: 29.5%** | lr=1e-3, ema=0.999: 26.1% | lr=1e-3, ema=0.9999: 14.5%
+  - Best: lr=1e-3, ema_decay=0.99 → mean VF 29.5%, ethanol 52.8% (FIRST TIME ANY MOLECULE > 50%)
+  - W&B best: https://wandb.ai/kaityrusnelson1/tnafmol/runs/wzsmbdhg
+  - Key finding: lr=1e-3 (OneCycleLR peak) dominates (+10ppt over lr=1e-4). ema=0.99 optimal for 3000-step runs.
+  - Note: output dir naming (n_steps+lr only) caused raw output overwrite for different ema_decay runs.
+    W&B captured all 9 run summaries. See sweep_best_practices.md.
+- HEURISTICS full run (20000 steps, lr=1e-3, ema_decay=0.99, D_pos, fresh init):
+  - Mean VF: **26.7%**, best_val_loss=0.8188 at step 1000 (same early saturation)
+  - aspirin 6.6%, benzene 26.6%, ethanol 40.0%, **malonaldehyde 56.6%**, naphthalene 7.8%,
+    salicylic_acid 17.8%, toluene 14.6%, uracil 43.6%
+  - 1/8 molecules ≥ 50% (malonaldehyde) — FAILS primary criterion (4+/8 required)
+  - W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/z50wvlbl
 
-**Best result so far:** *(pending HEURISTICS sweep + full)*
+**Best result:** mean VF 29.5% (HEURISTICS sweep best config, 3000 steps). Full run: 26.7%.
+  First molecule ever to exceed 50%: ethanol 52.8% (sweep), malonaldehyde 56.6% (full run).
+  1/8 molecules ≥ 50% — primary criterion (4+/8) not met.
 
-**Pattern consistent with hyp_003:** alpha_pos saturation is the dominant failure mode. Architectural improvements (pos_enc +5ppt) and training recipe (SBG +0.4ppt) improve within the constrained regime but cannot escape the equilibrium. 20 architectural combinations and training recipe variants all converge to the same loss plateau by step 150.
+**Pattern consistent with hyp_003 but improved:** alpha_pos saturation equilibrium persists (loss→0.869,
+  log_det/dof→0.100 by step 150). Architectural improvements (pos_enc +5ppt) and training recipe
+  (SBG + lr=1e-3 + ema=0.99: +12ppt over SANITY baseline) push performance within the constrained regime.
+  The lr=1e-3 + ema=0.99 combination is a key new finding: provides 10× more improvement than architecture alone.

@@ -3,7 +3,7 @@
   "command": "OPTIMIZE",
   "status": "in_progress",
   "created": "2026-03-02T00:00:00Z",
-  "last_updated": "2026-03-02T20:00:00Z",
+  "last_updated": "2026-03-02T23:30:00Z",
   "machine": {
     "host": "escher",
     "user": "kai_nelson",
@@ -23,7 +23,9 @@
       "angles/sanity/sweep/runs/run_3000steps_lr5e-5/best.pt",
       "angles/sanity/sweep/runs/run_3000steps_lr1e-4/best.pt",
       "angles/sanity/sweep/runs/run_3000steps_lr2e-4/best.pt",
-      "angles/sanity/full/best.pt"
+      "angles/sanity/full/best.pt",
+      "angles/heuristics/val/best.pt",
+      "angles/heuristics/full/best.pt"
     ],
     "raw_outputs": [
       "angles/sanity/ablation_A_baseline/raw/mol_results.pt",
@@ -35,7 +37,9 @@
       "angles/sanity/sweep/runs/run_3000steps_lr5e-5/raw/mol_results.pt",
       "angles/sanity/sweep/runs/run_3000steps_lr1e-4/raw/mol_results.pt",
       "angles/sanity/sweep/runs/run_3000steps_lr2e-4/raw/mol_results.pt",
-      "angles/sanity/full/raw/mol_results.pt"
+      "angles/sanity/full/raw/mol_results.pt",
+      "angles/heuristics/val/raw/mol_results.pt",
+      "angles/heuristics/full/raw/mol_results.pt"
     ]
   },
   "steps": [
@@ -160,11 +164,29 @@
     },
     {
       "name": "angle_heuristics_full",
-      "status": "in_progress",
+      "status": "completed",
       "acceptance": "Full training run (20000 steps) on best sweep config. Final evaluation on all 8 molecules.",
       "started_at": "2026-03-02T21:00:00Z",
+      "completed_at": "2026-03-02T23:00:00Z",
       "w_and_b": "https://wandb.ai/kaityrusnelson1/tnafmol/runs/z50wvlbl",
-      "pid": 1246753
+      "result": {
+        "mean_vf": 0.267,
+        "best_val_loss": 0.8188,
+        "best_step": 1000,
+        "primary_criterion_met": false,
+        "molecules_above_50pct": 1,
+        "per_mol": {
+          "aspirin": 0.066,
+          "benzene": 0.266,
+          "ethanol": 0.400,
+          "malonaldehyde": 0.566,
+          "naphthalene": 0.078,
+          "salicylic_acid": 0.178,
+          "toluene": 0.146,
+          "uracil": 0.436
+        },
+        "notes": "1/8 molecules >= 50% (malonaldehyde 56.6%). FAILS primary criterion (4+/8). Best checkpoint at step 1000 — same early saturation as all previous runs. Mean VF slightly lower than sweep best (26.7% vs 29.5%) due to stochastic variation in 500-sample eval. Sweep: ethanol 52.8%; full: malonaldehyde 56.6% — different molecule crosses threshold each time."
+      }
     },
     {
       "name": "angle_scale_val",

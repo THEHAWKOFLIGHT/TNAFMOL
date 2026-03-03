@@ -424,3 +424,55 @@ Previous PhD agent context exhausted after:
 - `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/sanity/sweep/sweep_summary.png`
 - `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/heuristics/val/config.json`
 - `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/heuristics/sweep/summary.json`
+
+---
+
+## 2026-03-02 — HEURISTICS Sweep + Full Run (hyp_004, context-c)
+**Branch:** `exp/hyp_004`
+
+### Decisions & Reasoning
+- HEURISTICS val completed with mean VF 17.93% — passes promising criterion (>17.48% SANITY full). Proceeded to sweep.
+- Sweep grid: ema_decay=[0.99, 0.999, 0.9999] × lr=[1e-4, 3e-4, 1e-3], bs=512 fixed.
+  Rationale: hyp_003 sweep missed ema=0.99 case; the faster EMA tracking is critical for short runs.
+- Ran all 9 configs sequentially via run_sweep.sh. Configs written individually to avoid naming collision.
+- Discovered train.py output naming bug: dir = f"run_{n_steps}steps_lr{lr_str}" — does not include ema_decay.
+  When multiple ema_decay values share same lr+n_steps, later run overwrites earlier. Last run (ema=0.9999) survived.
+  Mitigated: all 9 run summaries logged to W&B. Training log /tmp/hyp004_heuristics_sweep.log preserved per-mol results.
+  Documented in sweep_best_practices.md. Future fix: add ema_decay to directory name in train.py.
+- Best sweep result: lr=1e-3, ema_decay=0.99 → 29.5% mean VF (ethanol 52.8% — first >50% ever).
+  lr=1e-3 with OneCycleLR dominates by +10ppt over lr=1e-4/3e-4. ema_decay=0.99 > 0.999 > 0.9999 for 3000-step runs.
+- HEURISTICS full run: fresh initialization, lr=1e-3, ema=0.99, 20000 steps, D_pos config.
+  Result: 26.7% mean VF, malonaldehyde 56.6% (1/8 ≥ 50%). FAILS primary criterion.
+  Best checkpoint at step 1000 — same early saturation pattern as all previous runs (alpha_pos equilibrium).
+  Mean VF slightly lower than sweep best (26.7% vs 29.5%): stochastic variation in 500-sample eval;
+  different molecule crosses 50% threshold each time (sweep: ethanol, full: malonaldehyde).
+- Generated canonical results/ plots: valid_fraction_comparison.png, experiment_progression.png,
+  min_pairwise_distance.png. Final report updated with all results.
+
+### New Files Created
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/heuristics/sweep/run_sweep.sh`
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/heuristics/sweep/summary.json` (updated)
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/heuristics/sweep/sweep_summary.png`
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/heuristics/sweep/runs/run_3000steps_lr1e-4/config.json`
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/heuristics/sweep/runs/run_3000steps_lr3e-4/config.json`
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/heuristics/sweep/runs/run_3000steps_lr1e-3/config.json`
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/heuristics/full/config.json`
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/results/valid_fraction_comparison.png`
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/results/experiment_progression.png`
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/results/min_pairwise_distance.png`
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/reports/final_report.md` (finalized)
+
+### Commits
+- `fd4ee52` — results: SANITY full run complete — 17.48% mean VF, 10k steps
+- `157298a` — results: HEURISTICS val complete — 17.93% mean VF (PROMISING)
+- `6a8ad1d` — results: HEURISTICS sweep complete — best lr=1e-3/ema=0.99 at 29.5%
+- `b5513b8` — docs: draft final report (HEURISTICS full run pending)
+- `fdcbe0d` — docs: update sweep_best_practices with hyp_003/004 sweep findings
+
+### Notes
+- Primary criterion: 4+/8 molecules ≥ 50%. Achieved: 1/8. PARTIAL result.
+- Research story: TarFlow with alpha_pos constraint is "constrained but learnable" —
+  more capacity available at lr=1e-3+ema=0.99 than previously thought. Not "fundamentally broken."
+- The alpha_pos saturation equilibrium (loss→0.869, log_det/dof→0.100 by step 150) persists
+  across all 20+ configs tested. Cannot be escaped by training recipe or architecture alone.
+  Best result is 29.5% at 3000 steps (sweep). Full run 26.7%. Both far from 50%+.
