@@ -918,7 +918,9 @@ def main():
             # Training
             'steps': args.steps or 50000,
             'batch_size': args.batch_size or 64,
-            'lr': args.lr or 3e-4,
+            # lr=1e-4 for large 768-channel model: 3e-4 causes early training instability
+            # (loss spikes to >30 in first few steps with 228M params)
+            'lr': args.lr or 1e-4,
             'noise_sigma': args.noise_sigma if args.noise_sigma is not None else 0.05,
             'grad_clip_norm': 1.0,
             'lr_schedule': 'cosine',
