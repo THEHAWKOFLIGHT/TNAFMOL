@@ -159,3 +159,46 @@ saturation when normalization was correct. The hyp_002/hyp_003 saturation was ca
 Padding (not shared scale) causes VF collapse. The correct architecture direction is: reduce or eliminate
 padding by working at T=n_real, or use a different approach that doesn't suffer from degenerate
 zero-padding tokens in the autoregressive sequence.
+
+---
+
+### und_001 Phase 4 — Ablation Matrix
+**Date:** 2026-03-02
+**Branch:** `exp/und_001`
+**Command:** DIAGNOSE
+**Status:** DONE
+
+9 new configs crossing the most impactful Phase 3 factors in a systematic ablation matrix.
+All configs: ethanol, 5000 steps, batch_size=256, lr=5e-4, cosine, grad_clip=1.0, seed=42.
+Configs run in parallel (2 at a time) on GPUs 5 and 6 (physical CUDA devices).
+
+**Results:**
+
+| Config | Descriptor | Valid % |
+|--------|-----------|---------|
+| 1 | T=9, no-noise, shared | **93.6%** |
+| 2 | T=9, noise, per-dim | **96.2%** |
+| 3 | T=9, noise, shared | **95.3%** |
+| 4 | T=21, no-noise, shared | 0.9% |
+| 5 | T=12 (3 pad), noise, shared | **69.6%** |
+| 6 | T=15 (6 pad), noise, shared | **50.4%** |
+| 7 | T=21, noise, shared + perm-aug | 2.1% |
+| 8 | T=21, noise, shared + SO(3)-aug | 34.8% |
+| 9 | T=9, noise, shared + clamp | **93.4%** |
+
+**Key findings:**
+1. Best achievable VF: **96.2%** (config 2: T=9, noise, per-dim). All T=9 configs = 93-96%.
+2. Padding degrades VF smoothly: ~−96 pp per unit pad_fraction (T=9: 95.3% → T=12: 69.6% → T=15: 50.4% → T=21: 40.2%). NOT a cliff.
+3. Permutation augmentation is catastrophically harmful (2.1%) — architecturally incompatible with causal autoregressive flows.
+4. SO(3) augmentation modestly harmful in padded regime (−5.4 pp vs baseline).
+5. Clamping is neutral without padding (−1.9 pp), harmful only with padding (−29.8 pp with T=21).
+6. Noise × shared scale interaction: large positive synergy in padded regime (+39.3 pp joint vs +11.6 pp noise alone).
+7. No intervention tested recovers padding-induced VF loss at T=21.
+
+**Architectural conclusion:** The padding gradient imbalance in the log-det objective is the root cause.
+An architectural fix is needed (e.g., per-sample n_real normalization, or abandoning the padded sequence format).
+
+**W&B runs:** https://wandb.ai/kaityrusnelson1/tnafmol (group: `und_001`, prefix: `und_001_phase4_config*`)
+
+**Story fit:** CONFIRMS Phase 3 finding. Padding is the primary obstacle. No augmentation or regularization
+strategy tested can overcome the fundamental padding gradient imbalance.

@@ -546,3 +546,66 @@ Step F needed re-run (old run used buggy code git_hash=09c565f). This session:
 
 ### Commits
 - (see git log for final commits after this entry)
+
+---
+
+## 2026-03-02 — Phase 4 Ablation Matrix
+**Branch:** `exp/und_001`
+
+### INTENTION (written before action)
+Phase 3 established that padding is the primary VF failure mode (B: 92.9% → C: 2.7%). Phase 4 fills in the systematic 2×2×2 crossing to quantify each factor's contribution, sweep the padding amount, test augmentation strategies, and answer 5 key questions about the architecture.
+
+Plan (written before execution):
+- 9 configs: T×noise×scale crossing (configs 1-4), padding sweep (5-6), augmentation (7-8), clamp-without-padding (9)
+- Run 2 configs at a time in parallel on GPUs 5 and 6 (CUDA_VISIBLE_DEVICES=5 and 6)
+- 5000 steps each, same hyperparams as Phase 3 base
+- Expected key finding: T=9 configs should all be ~90-95%; padding sweep should show smooth decline
+
+### Decisions & Reasoning
+- Implemented `src/train_phase4.py` importing core classes from `train_phase3.py` to avoid code duplication
+- Added `permute_atoms()` function for permutation augmentation (shuffles real atom order per batch)
+- SO(3) augmentation uses existing `augment_positions()` from `src/data.py`
+- For T=12 and T=15 (configs 5, 6): create custom mask of length T (9 ones + padding zeros), slice positions to T atoms from the full 21-atom dataset
+- Ran quick sanity test (50 steps) for config 3 before launching full runs — all metrics finite, W&B connected ✓
+- Ran configs in order: (1,2), (3,4), (5,6), (7,8), (9) — 2 at a time to respect GPU limits
+
+### Key Results (Phase 4 Complete)
+
+| Config | Descriptor | VF | logdet/dof | Final loss |
+|--------|-----------|-----|-----------|------------|
+| 1 | T=9, no-noise, shared | 93.6% | 0.120 | -2.74 |
+| 2 | T=9, noise, per-dim | **96.2%** | 0.088 | -1.88 |
+| 3 | T=9, noise, shared | 95.3% | 0.087 | -1.87 |
+| 4 | T=21, no-noise, shared | 0.9% | 0.121 | -2.76 |
+| 5 | T=12 (3 pad), noise, shared | 69.6% | 0.088 | -1.86 |
+| 6 | T=15 (6 pad), noise, shared | 50.4% | 0.088 | -1.86 |
+| 7 | T=21, noise, shared+perm | 2.1% | 0.063 | -1.19 |
+| 8 | T=21, noise, shared+SO3 | 34.8% | 0.059 | -1.10 |
+| 9 | T=9, noise, shared+clamp | 93.4% | 0.087 | -1.87 |
+
+### Plausibility Checks (passed before reporting)
+- T=9 configs all in 93-96% range as predicted — consistent with Phase 3 steps A/B ✓
+- Config 4 (T=21, no noise, shared) at 0.9% — worse than Step C (2.7%), because shared scale without noise accelerates collapse ✓
+- Padding sweep (configs 5, 6): smooth monotonic decline 95.3% → 69.6% → 50.4% → 40.2% as T increases ✓
+- Permutation augmentation catastrophic (2.1%) — expected, architecturally incompatible with causal flows ✓
+- Config 9 (T=9, clamp) near-identical to config 3 (T=9, no clamp): 93.4% vs 95.3% — clamp is near-neutral without padding ✓
+- Loss values all finite, no NaN events reported in any config ✓
+
+### New Files Created
+- `src/train_phase4.py` — Phase 4 ablation matrix training script
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/config_1_T9_nonoise_shared/` — config 1 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/config_2_T9_noise_perdim/` — config 2 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/config_3_T9_noise_shared/` — config 3 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/config_4_T21_nonoise_shared/` — config 4 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/config_5_T12_noise_shared/` — config 5 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/config_6_T15_noise_shared/` — config 6 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/config_7_T21_noise_shared_permaug/` — config 7 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/config_8_T21_noise_shared_so3aug/` — config 8 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/config_9_T9_noise_shared_clamp/` — config 9 outputs
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/summary_all_configs.png` — summary bar chart
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/padding_sweep_and_factors.png` — padding sweep + factor effects
+- `experiments/understanding/und_001_tarflow_diagnostic/results/phase4/crossing_heatmap.png` — 2×2×2 heatmap
+- `experiments/understanding/und_001_tarflow_diagnostic/reports/ablation_report.md` — full ablation analysis
+
+### Commits
+- (see git log for commits after this entry)
