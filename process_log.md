@@ -518,7 +518,9 @@ Context restored from summary. Continuing from mid-debug of NaN in Steps C-F. n_
 5. **Loss magnitude vs VF are decoupled**: Steps C and A have similar best_loss (-2.83 vs -2.83) but radically different VF (2.7% vs 89.1%). The NLL doesn't capture pairwise distance validity. Loss alone is insufficient to diagnose molecular structure quality.
 
 ### New Files Created
-- None (only ran experiments and collected results)
+- `reports/phase3_report.md` — detailed Phase 3 step-by-step analysis with figures and interpretation
+- `reports/final_report.md` — final experiment report for Postdoc synthesis
 
 ### Commits
-- (to be added after this session's git operations)
+- `3fbf7f1` — [und_001] results: Phase 3 Steps C-E complete; docs updated
+- `05da6e1` — [und_001] results: Step F complete (VF=10.4%); corrected docs
