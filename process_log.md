@@ -388,3 +388,39 @@ Previous PhD agent context exhausted after:
 - `[hyp_004] results: HEURISTICS full run`
 - `[hyp_004] results: canonical plots and notes.md`
 - `[hyp_004] docs: final report, experiment_log, process_log`
+
+---
+
+## 2026-03-02 — hyp_004 continued: SANITY full + HEURISTICS val
+**Branch:** `exp/hyp_004`
+
+### SANITY Full Run Results (10000 steps, D_pos, lr=5e-5)
+- W&B run: https://wandb.ai/kaityrusnelson1/tnafmol/runs/k88dxne7
+- Config: use_pos_enc=True, lr=5e-5, batch_size=128, cosine LR, no EMA
+- Results per molecule:
+  - ethanol: 44.2%, malonaldehyde: 39.8% (best)
+  - benzene: 22.2%, uracil: 18.4%
+  - salicylic_acid: 5.6%, toluene: 7.4%, naphthalene: 1.8%, aspirin: 0.4%
+  - Mean: 17.48%, 0/8 molecules ≥ 50%
+- Best checkpoint: step 1000 (val_loss=0.8176) — saturation same as ablation
+- Confirms: 10000 steps provides NO improvement over 3000 steps (17.65%)
+  → alpha_pos saturation is not a training-budget issue. Best checkpoint always early.
+- Plausibility check: ✓ smaller molecules > larger ✓ log_det/dof=0.100 locked ✓ early checkpoint
+- SANITY FAILS primary criterion (no molecule ≥ 50%). Proceeding to HEURISTICS.
+
+### INTENTION: HEURISTICS Val Run (currently running)
+- Config: D_pos + SBG recipe (betas=(0.9,0.95), OneCycleLR, EMA=0.999, bs=512, lr=3e-4)
+- W&B run: https://wandb.ai/kaityrusnelson1/tnafmol/runs/ht2xyghi
+- Promising if: mean VF > 17.48% (SANITY full baseline)
+- In hyp_003: SBG improved from 13.1% → 16.8% (+3.7ppt). Expecting similar gain here.
+- PID: 1222332, cuda:0, 3000 steps, ~659s total (at step 1500/3000 at t=175s)
+
+### New Files Created (SANITY full)
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/sanity/full/config.json`
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/sanity/full/best.pt` (gitignored)
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/sanity/full/raw/mol_results.pt` (gitignored)
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/sanity/diag/ablation_comparison.png`
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/sanity/diag/per_mol_heatmap.png`
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/sanity/sweep/sweep_summary.png`
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/heuristics/val/config.json`
+- `experiments/hypothesis/hyp_004_tarflow_arch_ablation/angles/heuristics/sweep/summary.json`

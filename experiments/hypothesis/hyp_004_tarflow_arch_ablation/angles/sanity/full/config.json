@@ -27,7 +27,10 @@
   "val_interval": 500,
   "eval_n_samples": 500,
   "log_det_reg_weight": 5.0,
-  "betas": [0.9, 0.999],
+  "betas": [
+    0.9,
+    0.999
+  ],
   "weight_decay": 1e-05,
   "use_ema": false,
   "ema_decay": 0.999,
@@ -37,9 +40,16 @@
   "molecules": null,
   "wandb_project": "tnafmol",
   "wandb_group": "hyp_004",
-  "wandb_tags": ["hypothesis", "hyp_004", "OPTIMIZE", "sanity", "full"],
-  "wandb_notes": "SANITY full run — D_pos config (use_pos_enc=True), lr=5e-5, 10000 steps",
-  "run_name_suffix": "pos_lr5e-5",
+  "wandb_tags": [
+    "hypothesis",
+    "hyp_004",
+    "OPTIMIZE",
+    "sanity",
+    "full"
+  ],
+  "wandb_notes": "SANITY full run \u2014 D_pos config (use_pos_enc=True), lr=5e-5, 10000 steps",
   "output_dir": "experiments/hypothesis/hyp_004_tarflow_arch_ablation",
-  "global_std": 1.290462613105774
+  "run_name_suffix": "pos_lr5e-5",
+  "global_std": 1.290462613105774,
+  "git_hash": "586f5437"
 }
