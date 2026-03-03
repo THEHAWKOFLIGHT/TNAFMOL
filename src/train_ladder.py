@@ -116,7 +116,7 @@ def get_mnist_loaders(batch_size: int, num_workers: int = 4):
 # Data: Level 2 — CIFAR-10
 # ---------------------------------------------------------------------------
 
-def get_cifar10_loaders(batch_size: int, num_workers: int = 4):
+def get_cifar10_loaders(batch_size: int, num_workers: int = 0):
     import torchvision
     import torchvision.transforms as T
     transform = T.Compose([
