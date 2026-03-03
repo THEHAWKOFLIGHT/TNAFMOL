@@ -230,6 +230,11 @@ class MetaBlockSharedScale(nn.Module):
         scale = (-xa.float()).exp().type(xa.dtype)  # (B, T, 1)
         z = (x_in - xb) * scale  # broadcasts: scale (B,T,1) × (B,T,3)
 
+        # Zero out padding atoms in z to prevent instability in NLL computation
+        if padding_mask is not None:
+            pad_float_3d = padding_mask.float().unsqueeze(-1)  # (B, T, 1)
+            z = z * pad_float_3d
+
         z = self.permutation(z, inverse=True)
 
         # Log-determinant: each atom contributes -3 * xa_i to log|det J| (3 coords scaled by xa)
@@ -665,16 +670,21 @@ class MetaBlockWithCond(nn.Module):
         scale = (-xa.float()).exp().type(xa.dtype)
         z = (x_perm - xb) * scale
 
-        z = self.base.permutation(z, inverse=True)
-
-        # Log-det: per-dimension scales
+        # Zero out padding atoms in z to prevent NaN/instability downstream
         if padding_mask is not None:
             pad_float = padding_mask.float().unsqueeze(-1)  # (B, T, 1)
-            xa_masked = xa * pad_float
-            T = xa.size(1)
-            logdet = -(xa_masked).mean([1, 2]) * (xa.size(1) * xa.size(2)) / (T * self.in_channels)
-            # Simplified: just use the standard mean over all positions (padding zeros contribute 0)
-            logdet = -xa_masked.mean([1, 2])
+            z = z * pad_float
+
+        z = self.base.permutation(z, inverse=True)
+
+        # Log-det: per-dimension scales, masking out padding atoms
+        if padding_mask is not None:
+            # xa_masked: only real atoms contribute to log_det
+            xa_masked = xa * pad_float  # (B, T, 3)
+            # Normalize by T (total positions including padding) to match Apple convention
+            # Apple: logdet = -xa.mean([1,2]) = -sum(xa) / (T * D)
+            # With masking: logdet = -sum(xa_masked) / (T * D)
+            logdet = -xa_masked.mean(dim=[1, 2])  # (B,)
         else:
             logdet = -xa.mean(dim=[1, 2])  # (B,)
 
