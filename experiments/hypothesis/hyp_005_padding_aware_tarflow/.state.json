@@ -3,7 +3,7 @@
   "command": "OPTIMIZE",
   "status": "in_progress",
   "created": "2026-03-03T18:00:00Z",
-  "last_updated": "2026-03-03T22:00:00Z",
+  "last_updated": "2026-03-03T22:30:00Z",
   "machine": {
     "host": "localhost",
     "user": "kai_nelson",
@@ -128,14 +128,18 @@
     },
     {
       "name": "source_integration",
-      "status": "pending",
-      "acceptance": "No .py files in experiment dir; src/ reflects current practice."
+      "status": "completed",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice.",
+      "completed_at": "2026-03-03T22:30:00Z",
+      "note": "run_sweep.py removed via git rm. make_plots.py generated plots then deleted without committing. No .py files remain in experiments/hypothesis/hyp_005_padding_aware_tarflow/. No new code to promote to src/ — all logic already in src/train.py, src/model.py, src/data.py.",
+      "commit": "2ef7b7f"
     },
     {
       "name": "final_report",
       "status": "completed",
       "acceptance": "Final Experiment Report written to reports/final_report.md.",
-      "completed_at": "2026-03-03T22:00:00Z"
+      "completed_at": "2026-03-03T22:00:00Z",
+      "commit": "2ef7b7f"
     },
     {
       "name": "merge_and_tag",
