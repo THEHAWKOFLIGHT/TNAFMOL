@@ -56,3 +56,14 @@ Append-only log. One entry per experiment.
 **Failure modes:** None — diagnostic achieved its goal completely.
 **Story fit:** FITS with correction — shared scale hypothesis was wrong; padding is the primary failure. RESEARCH_STORY.md updated.
 **Concerns:** CIFAR-10 baseline verification (Phase 2 Level 2) still training at step 23500/50000. Non-blocking — does not affect molecular diagnostic conclusions.
+
+---
+
+### hyp_005 — Padding-Aware Multi-Molecule TarFlow
+**Date:** 2026-03-03 | **Status:** FAILURE
+**Tag:** `hyp_005` | **Merge commit:** `bf99802`
+**Result:** Best VF=4.7% on ethanol with Config D (PAD token + query zeroing) + reg_weight=2.0, lr=3e-4. SANITY 2x2 factorial: all 4 configs VF=0%, log_det/dof=7.3 — padding fixes have zero effect. HEURISTICS sweep best VF=4.7% (far below 40% criterion). SCALE skipped (training objective equilibrium).
+**PhD quality:** CLEAN — single PhD agent, no send-backs. HEURISTICS pivot from masked LayerNorm to log_det_reg_weight well-justified by SANITY evidence.
+**Failure modes:** None (experiment-level). Failure is log-det exploitation in SOS+causal architecture independent of padding treatment.
+**Story fit:** CONFLICT — und_001 predicted padding fixes would restore multi-molecule VF. Prediction failed. Padding fixes correct but insufficient.
+**Concerns:** 10x degradation from single-molecule to multi-molecule unexplained. Key untested: alpha_pos=0.02 + reg_weight=5 + Config D in multi-molecule.
