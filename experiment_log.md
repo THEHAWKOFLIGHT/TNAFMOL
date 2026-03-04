@@ -304,3 +304,35 @@ strategy tested can overcome the fundamental padding gradient imbalance.
 16 runs: 8 Config A (configA_*) + 8 Config B (configB_*) under group und_001
 
 **Story fit:** FITS — confirms padding as primary failure mode. Architecture itself is sound (98.2% ceiling). Config B improvement over hyp_003 is consistent with Phase 3/4 established best practices.
+
+---
+
+## hyp_005 — Padding-Aware Multi-Molecule TarFlow
+**Date:** 2026-03-03 | **Branch:** `exp/hyp_005` | **Status:** FAILURE
+
+**Hypothesis:** Fix the two padding corruption channels (PAD token embedding, query zeroing for LayerNorm contamination) to enable multi-molecule TarFlow matching single-molecule performance.
+
+**Code changes:** Fixed causal mask bug (src/model.py), PAD_TOKEN_IDX=4 (src/data.py), query zeroing in TarFlowBlock, Gaussian noise, config integration in src/train.py. 6/6 unit tests pass.
+
+**SANITY angle (4 configs × 1000 steps, ethanol, alpha_pos=1.0):**
+| Config | PAD token | Query zeroing | VF | log_det/dof |
+|--------|-----------|---------------|-----|-------------|
+| A (baseline) | No | No | 0.0% | 7.26 |
+| B (PAD token) | Yes | No | 0.0% | 7.3 |
+| C (query zero) | No | Yes | 0.0% | 7.3 |
+| D (both) | Yes | Yes | 0.0% | 7.3 |
+Finding: PAD token and query zeroing have ZERO effect on log-det exploitation. Failure mode is training dynamics, not padding corruption.
+
+**HEURISTICS angle (log_det_reg_weight sweep, 9 configs × 3000 steps):**
+- Changed from planned masked LayerNorm to log_det_reg_weight (Andrade et al. 2024) — masked LayerNorm inapplicable since Config D's query zeroing already silences padding from transformer
+- Best: reg_weight=2.0, lr=3e-4 → VF=4.7% on ethanol (criterion: >40%). FAILS.
+- Pattern: all runs plateau at step 500. Equilibrium log_det/dof ≈ 1/(2*reg_weight).
+
+**SCALE angle:** Skipped — failure is training objective equilibrium, not capacity. Confirmed by hyp_003/004 precedent.
+
+**Best result:** VF=4.7% on ethanol (3000 steps). Target: VF≥50% on ≥4/8 molecules. FAILURE.
+
+**Story conflict:** Padding fixes are correct but insufficient. The actual bottleneck is the SOS+causal architecture's steeper log-det gradient dynamics vs. Apple's output-shift architecture. 10x degradation from single-molecule (44% hyp_004) to multi-molecule (4.7%) unexplained.
+
+**W&B sweep:** https://wandb.ai/kaityrusnelson1/tnafmol/sweeps/kzkja8zy
+**W&B val:** lwg95pjk (Config A SANITY), khw1bzkb (HEURISTICS val)

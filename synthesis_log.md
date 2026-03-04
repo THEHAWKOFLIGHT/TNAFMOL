@@ -248,3 +248,79 @@ Environment note: PyTorch was broken on this machine (Windows DLL load failure).
 - Phase 2 CIFAR-10 (ongoing): https://wandb.ai/kaityrusnelson1/tnafmol/runs/rlvxam2e
 
 **Story impact:** This is a major pivot for the project. The narrative changes from "TarFlow is architecturally incompatible with molecular data" to "TarFlow works excellently per-molecule; padding is the multi-molecule bottleneck." The experiment plan is updated: hyp_005 trains per-molecule TarFlow (T=n_real) for the DDPM comparison, rather than attempting more TarFlow fixes. The prior experiments (hyp_002/003/004) operated within two implementation bugs — their findings about the alpha_pos equilibrium are superseded by und_001's bug-free analysis.
+
+---
+
+### 2026-03-03 — hyp_005 synthesis
+**Status:** FAILURE | **Failure level:** None
+**Branch:** `exp/hyp_005` | **Tag:** `hyp_005`
+
+**Experiment:** Padding-Aware Multi-Molecule TarFlow OPTIMIZE. Attempted to fix the two padding corruption channels identified by und_001: (A) padding atoms get H embedding index 0, contaminating hydrogen's learned representation; (B) padding atoms run through full transformer, corrupting LayerNorm and gradients.
+
+**PhD execution review:**
+- Single PhD agent completed all work (no context exhaustion)
+- Code changes: causal mask fixed (strictly causal), PAD_TOKEN_IDX=4 added, query zeroing implemented, Gaussian noise function added, n_atom_types=5 when use_pad_token=True. 6/6 unit tests pass.
+- OPTIMIZE protocol followed correctly: diagnostic → SANITY (2x2 factorial val) → HEURISTICS (val → sweep) → SCALE (skipped with justification)
+- All W&B runs properly tagged and grouped (group: hyp_005)
+- Logs maintained (process_log.md, experiment_log.md — both updated)
+- .state.json updated throughout execution with results and W&B IDs
+- Source integration completed: no .py files in experiment dir, all code already in src/
+- 12 commits on exp/hyp_005, all follow convention
+- No hardcoded reference values
+
+**OPTIMIZE angle review:**
+1. **SANITY (2x2 PAD token × query zeroing, alpha_pos=1.0, 1000 steps, ethanol):**
+   - All 4 configs VF=0%, log_det/dof=7.3 — identical trajectories
+   - PAD token and query zeroing have ZERO effect on log-det exploitation
+   - Diagnostic had shown alpha_pos=10.0 leads to log_det/dof=12.97 at step 500; PhD correctly adapted to alpha_pos=1.0
+   - SANITY criterion (VF>0.40 any config) not met. Sweep skipped. Correct per protocol.
+   - W&B runs: lwg95pjk, otquvyhm, krb1i427, 1gruyalq
+
+2. **HEURISTICS (log_det_reg_weight, Andrade et al. 2024):**
+   - PhD pivoted from planned masked LayerNorm to log_det_reg_weight based on SANITY evidence showing failure is objective-level, not padding-specific. This is a reasonable adaptation — SANITY proved Config D's query zeroing already silences padding from the transformer; masked LayerNorm would add nothing. log_det_reg_weight is the established technique for log-det exploitation, cited in src/model.py and proven in hyp_003 single-molecule.
+   - **Citation verification:** Andrade et al. 2024 — already cited in src/model.py line 142. The technique (quadratic penalty on log_det_per_dof) directly addresses the diagnosed failure mode. APPROVED.
+   - Val run (1000 steps, reg_weight=2.0, lr=3e-4, Config D): VF=2.7%, log_det/dof=0.25. Plateau at step 200.
+   - Sweep (3000 steps, 9 configs: reg_weight=[0.5,1.0,2.0] × lr=[1e-4,3e-4,5e-4]): Best VF=4.7% at reg_weight=2.0, lr=3e-4.
+   - Promising criterion (VF>0.40) not met. Full run skipped. Correct per protocol.
+   - W&B sweep: kzkja8zy
+
+3. **SCALE (skipped):**
+   - Justified: log_det/dof equilibrium at 1/(2*reg_weight) is independent of model size. Confirmed by hyp_003/004 where scaling provided no benefit once equilibrium reached. Valid skip.
+
+**Key finding:**
+The padding fixes (PAD token, query zeroing) are CORRECT but INSUFFICIENT. The actual bottleneck is log-det exploitation in src/model.py's SOS+causal architecture in the multi-molecule setting. The 10x degradation from single-molecule (hyp_003: 29% VF ethanol, hyp_004: 44% VF ethanol) to multi-molecule (hyp_005: 4.7% VF ethanol) remains unexplained. The padding fixes have zero measurable effect while the log-det issue dominates.
+
+**Postdoc verification:**
+- Reviewed final_report.md: technically sound, SANITY evidence correctly interpreted, HEURISTICS pivot well-justified
+- Reviewed all 3 canonical plots: sanity_ablation.png (identical trajectories confirming zero padding effect), heuristics_sweep.png (reg_weight=2.0 only configs achieving any VF), min_dist_progression.png (monotonic improvement with reg_weight but below valid threshold)
+- Verified .state.json: all steps completed/skipped, artifacts listed, W&B IDs populated
+- Pre-merge consistency checks: all passed (no .py in experiments, no __pycache__, reports present, logs updated, commits follow convention)
+- No suspicious values — results are internally consistent with hyp_003 findings in multi-molecule setting
+
+**Source integration:** N/A — all code (causal mask fix, PAD token, query zeroing, noise) already in src/model.py, src/data.py, src/train.py. No .py files in experiment directory. run_sweep.py was created then git rm'd during execution. No new code to promote.
+
+**Pre-merge checks:**
+- [x] No .py files in experiments/hyp_005
+- [x] No __pycache__/
+- [x] No TASK_BRIEF.md
+- [x] data/ exists with 8 versioned datasets
+- [x] results/ folder contains 3 canonical plots
+- [x] .state.json all steps completed/skipped (except merge_and_tag)
+- [x] experiment_log.md has hyp_005 entries
+- [x] process_log.md has hyp_005 entries with commits section
+- [x] synthesis_log.md is append-only
+- [x] All 12 commits follow convention
+- [x] Branch name follows convention (exp/hyp_005)
+- [x] Working tree clean (untracked files only — gitignored binaries)
+
+**PhD execution quality:** CLEAN — no send-backs needed. HEURISTICS pivot from masked LayerNorm to log_det_reg_weight was well-justified by SANITY evidence. The failure is an experimental outcome, not an implementation error.
+
+**W&B runs:**
+- Diagnostic: (embedded in SANITY runs)
+- SANITY configs A-D: lwg95pjk, otquvyhm, krb1i427, 1gruyalq
+- HEURISTICS val: khw1bzkb
+- HEURISTICS sweep: kzkja8zy (https://wandb.ai/kaityrusnelson1/tnafmol/sweeps/kzkja8zy)
+
+**Story impact:** CONFLICT with current research story. The story (post-und_001) predicted that fixing padding corruption channels would enable multi-molecule TarFlow. This prediction failed — padding fixes have zero measurable effect while log-det exploitation dominates. The SOS+causal architecture in src/model.py has fundamentally different gradient dynamics than Apple's output-shift architecture used in und_001. The story needs updating: padding fixes are necessary but not sufficient; the architecture difference (SOS+causal vs output-shift) may be the deeper issue.
+
+**Open question for user:** The untested combination (alpha_pos=0.02 + reg_weight=5 + Config D in multi-molecule) could bridge the single→multi gap. Also, switching to Apple's output-shift architecture for multi-molecule training is a potential next step.

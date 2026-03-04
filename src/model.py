@@ -18,6 +18,9 @@ Implementation detail:
 - Atom i attends to [SOS, atom_0, ..., atom_{i-1}] in forward order.
 - This ensures atom 0 always has a valid context (the SOS token), avoiding NaN softmax.
 - The SOS token output is discarded; only atom outputs are used.
+- STRICTLY CAUSAL: atom at position i+1 (0-indexed, 0=SOS) attends only to positions
+  0..i-1 (NOT including itself). SOS can self-attend. This gives a lower-triangular
+  Jacobian (off-diagonal block), required for correct log-determinant computation.
 
 Training:
 - MLE: minimize NLL = -sum_i(3 * log_scale_i * mask_i) - log p_z(z)
@@ -47,6 +50,17 @@ hyp_004 changes:
   embeddings.
 - TarFlow: use_bidir_types flag to toggle bidirectional type encoder, use_pos_enc flag
   to toggle positional encodings.
+
+hyp_005 changes:
+- CAUSAL MASK BUG FIX: _build_causal_mask() now uses strictly causal masking.
+  Previously `allowed[i, :i+1] = True` was self-inclusive (atom at position i+1
+  attended to itself). Now: SOS [0,0]=True, atoms [i, :i]=True for i>=1.
+  This restores the lower-triangular Jacobian required for correct NLL computation.
+  (Bug was present since hyp_002; confirmed harmful in und_001.)
+- zero_padding_queries: TarFlowBlock accepts zero_padding_queries=True flag.
+  When enabled, zeroes the d_model-projected query of all padding atoms before attention.
+  This prevents padding from corrupting LayerNorm statistics and gradient flow — one of
+  the two padding corruption channels identified in und_001.
 """
 
 import math
@@ -298,6 +312,9 @@ class TarFlowBlock(nn.Module):
         shift_only: if True, use volume-preserving (shift-only) flow
         use_pos_enc: if True, add learned positional encodings (hyp_004)
         max_atoms: max number of atoms for positional encoding table (default 21)
+        zero_padding_queries: if True, zero the d_model query of padding atoms before
+            attention (hyp_005). Prevents padding from corrupting LayerNorm statistics
+            and gradient flow. Applied after input_proj + pos_enc, before attention.
         log_scale_max: DEPRECATED — kept for backward compat, ignored if alpha_pos/alpha_neg provided
     """
 
@@ -314,6 +331,7 @@ class TarFlowBlock(nn.Module):
         shift_only: bool = False,
         use_pos_enc: bool = False,
         max_atoms: int = 21,
+        zero_padding_queries: bool = False,
         log_scale_max: float = 0.5,  # DEPRECATED — ignored, kept for compat
     ):
         super().__init__()
@@ -324,6 +342,7 @@ class TarFlowBlock(nn.Module):
         self.alpha_neg = alpha_neg
         self.shift_only = shift_only
         self.use_pos_enc = use_pos_enc
+        self.zero_padding_queries = zero_padding_queries
 
         # Learnable SOS token (provides context for the first atom)
         self.sos = nn.Parameter(torch.randn(1, 1, d_model) * 0.01)
@@ -369,15 +388,37 @@ class TarFlowBlock(nn.Module):
         nn.init.zeros_(self.out_proj.bias)
 
     def _build_causal_mask(self, n_atoms: int, device) -> torch.Tensor:
-        """Build causal attention mask for n_atoms + 1 (SOS) positions.
+        """Build strictly causal attention mask for n_atoms + 1 (SOS) positions.
 
-        For forward order: atom i (at position i+1 in the sequence with SOS at 0)
-        attends to [SOS, atom_0, ..., atom_{i-1}] = positions [0, 1, ..., i].
+        For forward order: atom i (at position i+1 in the sequence, SOS is at 0)
+        attends to [SOS, atom_0, ..., atom_{i-1}] = positions [0, 1, ..., i-1].
+        This is STRICTLY CAUSAL: atom at position i+1 does NOT attend to itself.
+
+        Special case: SOS at position 0 can self-attend (it has no prior context).
+
         So in the full (N+1) x (N+1) attention matrix:
-          row (i+1) can attend to columns [0, 1, ..., i] (self-inclusive in the SOS+atom frame).
+          row 0 (SOS): can attend to column 0 only (self)
+          row i+1 (atom i): can attend to columns [0, 1, ..., i-1] (SOS + prior atoms, NOT self)
 
-        For reverse order: atom i attends to [SOS, atom_{i+1}, ..., atom_{N-1}].
-        We reorder the atom sequence, so atom at index j in the reversed list sees positions before it.
+        This gives the correct lower-triangular Jacobian structure: y_i = f(x_0, ..., x_{i-1})
+        so dy_i/dx_i is determined only by the direct affine transform (exp(log_scale_i)),
+        making the Jacobian lower-triangular with log-det = sum_i 3*log_scale_i.
+
+        For reverse order: atoms are passed in reversed order externally, so the same
+        strictly causal mask applies to the reversed sequence.
+
+        Sanity checks:
+        - Row 0 (SOS): allows column 0 only — SOS sees only itself. CHECK.
+        - Row 1 (atom 0): allows column 0 only — atom 0 sees only SOS. CHECK.
+        - Row i+1 (atom i): allows columns 0..i-1 — atom i sees SOS + atoms 0..i-1. CHECK.
+        - No row i+1 allows column i+1 (self) — strictly causal. CHECK.
+        - Jacobian: y_i = exp(log_scale_i(x_{<i})) * x_i + shift_i(x_{<i})
+          => dy_i/dx_i = exp(log_scale_i) — diagonal element of Jacobian block. CHECK.
+          => dy_i/dx_j = 0 for j > i — upper-triangular block is zero. CHECK.
+
+        Args:
+            n_atoms: number of atoms (not including SOS)
+            device: torch device
 
         Returns:
             attn_bias: (N+1, N+1) additive bias — 0 for allowed, -inf for masked
@@ -386,20 +427,13 @@ class TarFlowBlock(nn.Module):
         # Create allowed mask: (N1, N1) bool, True = allowed
         allowed = torch.zeros(N1, N1, dtype=torch.bool, device=device)
 
-        if not self.reverse:
-            # Forward: position i (0-indexed, 0=SOS) attends to 0..i
-            for i in range(N1):
-                allowed[i, :i + 1] = True
-        else:
-            # Reverse: SOS at position 0 always allowed as context.
-            # We want atom_{N-1} to be "first" and attend only to SOS,
-            # atom_{N-2} to attend to SOS + atom_{N-1}, etc.
-            # We achieve this by: in forward form, atom at seq position i+1 (original atom i in the reversed sequence)
-            # attends to [SOS, seq_position_1, ..., seq_position_i].
-            # The atoms are passed in reverse order externally (positions reversed).
-            # So we just use the same self-inclusive causal mask.
-            for i in range(N1):
-                allowed[i, :i + 1] = True
+        # SOS at position 0 self-attends
+        allowed[0, 0] = True
+
+        # Atom at position i+1 (for i in 0..N-1) attends to positions 0..i (strictly causal: NOT i+1)
+        # positions 0..i = SOS + atoms 0..i-1
+        for i in range(1, N1):
+            allowed[i, :i] = True
 
         attn_bias = torch.zeros(N1, N1, device=device)
         attn_bias[~allowed] = float("-inf")
@@ -476,6 +510,18 @@ class TarFlowBlock(nn.Module):
         if self.use_pos_enc:
             pos_indices = torch.arange(N + 1, device=device)  # 0..N (SOS + atoms)
             h = h + self.pos_embed(pos_indices)  # broadcast: (B, N+1, d_model)
+
+        # Zero padding queries (hyp_005): zero the d_model activation of padding atoms
+        # Applied after input_proj + pos_enc, before attention.
+        # This prevents padding atoms from influencing attention queries and corrupting
+        # LayerNorm statistics. SOS (position 0) is always real — only atom positions
+        # 1..N+1 are potentially padding (h_mask uses atom_mask for positions 1..N).
+        # Sanity check: SOS at position 0 is never zeroed (sos_ones = 1). Padding
+        # atom positions (atom_mask=0) get h[:, that_position, :] = 0.
+        if self.zero_padding_queries:
+            sos_ones = torch.ones(B, 1, device=device)
+            h_mask = torch.cat([sos_ones, atom_mask.float()], dim=1)  # (B, N+1)
+            h = h * h_mask.unsqueeze(-1)  # (B, N+1, d_model) — zero padding positions
 
         # Build causal mask: (N+1, N+1) additive bias
         causal_bias = self._build_causal_mask(N, device)  # (N+1, N+1)
@@ -658,6 +704,7 @@ class TarFlow(nn.Module):
         use_actnorm: if True, add ActNorm after each block (not used in hyp_003)
         use_bidir_types: if True, use BidirectionalTypeEncoder (hyp_004)
         use_pos_enc: if True, add learned positional encodings per block (hyp_004)
+        zero_padding_queries: if True, zero padding atom queries before attention (hyp_005)
         log_scale_max: DEPRECATED — kept for backward compat, ignored
     """
 
@@ -677,6 +724,7 @@ class TarFlow(nn.Module):
         use_actnorm: bool = False,
         use_bidir_types: bool = False,
         use_pos_enc: bool = False,
+        zero_padding_queries: bool = False,
         log_scale_max: float = 0.5,  # DEPRECATED — kept for backward compat
     ):
         super().__init__()
@@ -690,6 +738,7 @@ class TarFlow(nn.Module):
         self.use_actnorm = use_actnorm
         self.use_bidir_types = use_bidir_types
         self.use_pos_enc = use_pos_enc
+        self.zero_padding_queries = zero_padding_queries
 
         # Atom type embedding (shared across all blocks)
         self.atom_type_emb = nn.Embedding(n_atom_types, atom_type_emb_dim)
@@ -723,6 +772,7 @@ class TarFlow(nn.Module):
                 shift_only=shift_only,
                 use_pos_enc=use_pos_enc,
                 max_atoms=max_atoms,
+                zero_padding_queries=zero_padding_queries,
             )
             for i in range(n_blocks)
         ])

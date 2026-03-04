@@ -1,0 +1,151 @@
+{
+  "exp_id": "hyp_005",
+  "command": "OPTIMIZE",
+  "status": "completed",
+  "created": "2026-03-03T18:00:00Z",
+  "last_updated": "2026-03-03T23:00:00Z",
+  "machine": {
+    "host": "localhost",
+    "user": "kai_nelson",
+    "gpu": "cuda:2",
+    "pid": null,
+    "claude_session_id": null
+  },
+  "artifacts": {
+    "dataset": "data/",
+    "checkpoints": [
+      "angles/sanity/val/config_a/best.pt",
+      "angles/sanity/val/config_b/best.pt",
+      "angles/sanity/val/config_c/best.pt",
+      "angles/sanity/val/config_d/best.pt",
+      "angles/heuristics/val/best.pt"
+    ],
+    "raw_outputs": [
+      "angles/sanity/val/config_a/raw/",
+      "angles/sanity/val/config_b/raw/",
+      "angles/sanity/val/config_c/raw/",
+      "angles/sanity/val/config_d/raw/",
+      "angles/heuristics/val/raw/",
+      "angles/heuristics/sweep/runs/"
+    ]
+  },
+  "steps": [
+    {
+      "name": "code_changes",
+      "status": "completed",
+      "acceptance": "Causal mask bug fixed in src/model.py (strictly causal). PAD_TOKEN_IDX=4 added to src/data.py. Query zeroing added to TarFlowBlock. Gaussian noise function added to src/data.py. n_atom_types=5 when use_pad_token=True. Config integration in src/train.py. All unit tests pass.",
+      "completed_at": "2026-03-03T18:30:00Z",
+      "commit": "f7cb104"
+    },
+    {
+      "name": "diagnostic",
+      "status": "completed",
+      "acceptance": "Diagnostic run (500 steps, ethanol, Config A + causal mask fix + no clamping). Report written to reports/diagnostic_report.md. Finding: log_det/dof explodes to 12.97 at step 500. VF=0%. Log-det exploitation runaway. SANITY fix: alpha_pos=1.0 for 4-config ablation.",
+      "completed_at": "2026-03-03T18:45:00Z",
+      "result": {"log_det_dof_at_step100": 3.44, "log_det_dof_at_step500": 12.97, "valid_fraction": 0.0}
+    },
+    {
+      "name": "plan",
+      "status": "completed",
+      "acceptance": "OPTIMIZE Plan Sub-report approved by Postdoc. Written to reports/plan_report.md.",
+      "completed_at": "2026-03-03T19:00:00Z",
+      "commit": "c810bca"
+    },
+    {
+      "name": "angle_sanity_val",
+      "status": "completed",
+      "acceptance": "4-config 2x2 factorial ablation (1000 steps each, ethanol). Any config achieves VF > 0.40 on ethanol.",
+      "completed_at": "2026-03-03T20:00:00Z",
+      "result": {
+        "config_a": {"vf": 0.0, "log_det_dof": 7.26},
+        "config_b": {"vf": 0.0, "log_det_dof": 7.3},
+        "config_c": {"vf": 0.0, "log_det_dof": 7.3},
+        "config_d": {"vf": 0.0, "log_det_dof": 7.3},
+        "promising": false,
+        "note": "All VF=0. PAD token and query zeroing have zero effect on log-det exploitation. SANITY FAILS."
+      },
+      "wandb_runs": ["lwg95pjk", "otquvyhm", "krb1i427", "1gruyalq"],
+      "commit": "4a086f2"
+    },
+    {
+      "name": "angle_sanity_sweep",
+      "status": "skipped",
+      "reason": "SANITY val failed promising criterion (all VF=0). No config to sweep.",
+      "skipped_at": "2026-03-03T20:00:00Z"
+    },
+    {
+      "name": "angle_sanity_full",
+      "status": "skipped",
+      "reason": "SANITY val failed. No full run warranted.",
+      "skipped_at": "2026-03-03T20:00:00Z"
+    },
+    {
+      "name": "angle_heuristics_val",
+      "status": "completed",
+      "acceptance": "HEURISTICS validation run. Masked LayerNorm replaced by log_det_reg_weight=2.0 (Andrade et al. 2024). VF > 0 on ethanol.",
+      "completed_at": "2026-03-03T20:10:00Z",
+      "result": {"vf": 0.027, "log_det_dof": 0.25, "min_dist_mean": 0.443},
+      "wandb_run": "khw1bzkb"
+    },
+    {
+      "name": "angle_heuristics_sweep",
+      "status": "completed",
+      "acceptance": "W&B sweep completed; best config selected.",
+      "completed_at": "2026-03-03T22:00:00Z",
+      "result": {
+        "best_reg_weight": 2.0,
+        "best_lr": 3e-4,
+        "best_vf": 0.047,
+        "promising": false,
+        "note": "Best VF=4.7% at 3000 steps. Far below 40% criterion. All runs plateau at step 500."
+      },
+      "wandb_sweep_id": "kzkja8zy",
+      "wandb_sweep_url": "https://wandb.ai/kaityrusnelson1/tnafmol/sweeps/kzkja8zy"
+    },
+    {
+      "name": "angle_heuristics_full",
+      "status": "skipped",
+      "reason": "Sweep failed promising criterion (best VF=4.7%, criterion 40%). No full run warranted.",
+      "skipped_at": "2026-03-03T22:00:00Z"
+    },
+    {
+      "name": "angle_scale_val",
+      "status": "skipped",
+      "reason": "SCALE skipped: failure is training objective equilibrium (log_det_dof ≈ 1/(2*reg_weight) regardless of capacity). Larger model converges to same equilibrium. Confirmed by hyp_003/004 precedent.",
+      "skipped_at": "2026-03-03T22:00:00Z"
+    },
+    {
+      "name": "angle_scale_sweep",
+      "status": "skipped",
+      "reason": "SCALE skipped (see angle_scale_val).",
+      "skipped_at": "2026-03-03T22:00:00Z"
+    },
+    {
+      "name": "angle_scale_full",
+      "status": "skipped",
+      "reason": "SCALE skipped (see angle_scale_val).",
+      "skipped_at": "2026-03-03T22:00:00Z"
+    },
+    {
+      "name": "source_integration",
+      "status": "completed",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice.",
+      "completed_at": "2026-03-03T22:30:00Z",
+      "note": "run_sweep.py removed via git rm. make_plots.py generated plots then deleted without committing. No .py files remain in experiments/hypothesis/hyp_005_padding_aware_tarflow/. No new code to promote to src/ — all logic already in src/train.py, src/model.py, src/data.py.",
+      "commit": "2ef7b7f"
+    },
+    {
+      "name": "final_report",
+      "status": "completed",
+      "acceptance": "Final Experiment Report written to reports/final_report.md.",
+      "completed_at": "2026-03-03T22:00:00Z",
+      "commit": "2ef7b7f"
+    },
+    {
+      "name": "merge_and_tag",
+      "status": "completed",
+      "acceptance": "Merged to main with tag hyp_005; pre-merge checks pass.",
+      "completed_at": "2026-03-03T23:00:00Z"
+    }
+  ]
+}

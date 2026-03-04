@@ -815,3 +815,188 @@ Plan (written before execution):
 ### Commits
 - e897f5c — [und_001] code: add train_phase5.py — best config validation on all 8 MD17 molecules
 - (results commit pending)
+
+---
+
+## 2026-03-03 — hyp_005 Phase 0: Code Changes (Padding-Aware TarFlow)
+**Branch:** `exp/hyp_005`
+
+### Decisions & Reasoning
+
+**Experiment context:** und_001 identified two padding corruption channels in the current TarFlow implementation:
+- Corruption A: padding atoms get atom_type_index=0 (H), contaminating hydrogen embedding
+- Corruption B: padding atoms run through full transformer, corrupting LayerNorm and input_proj gradients
+- Additionally: a causal mask bug (SOS token self-inclusive at i+1, creating non-triangular Jacobian) was never fixed in src/model.py
+
+**hyp_005 approach:** Fix the causal mask bug (required regardless) + test two targeted padding fixes in a 2x2 SANITY ablation:
+- use_pad_token=True: assign PAD_TOKEN_IDX=4 to padding atoms (separate embedding, not H=0)
+- zero_padding_queries=True: zero the input projection of padding atoms before attention (prevents padding from contributing to LayerNorm statistics and gradient flow)
+
+The 2x2 factorial (A=neither, B=PAD only, C=zero only, D=both) isolates the contribution of each fix.
+
+**Causal mask fix reasoning:** Current code uses `allowed[i, :i+1] = True` which allows position i+1 to attend to itself (column i+1 = atom i self-attending). This is self-inclusive and creates a non-triangular Jacobian — the log-determinant computation is wrong. The fix: use `allowed[i, :i] = True` (strictly causal, no self-attention except SOS at position 0).
+
+**PAD token reasoning:** With a separate PAD_TOKEN_IDX=4 and n_atom_types=5, padding atoms get their own embedding that can be learned to be irrelevant. Previously, padding atoms used H's embedding, corrupting hydrogen representation.
+
+**Query zeroing reasoning:** By zeroing padding queries after input_proj but before attention, padding atoms produce zero context vectors. LayerNorm then operates only on real atom activations. This prevents the gradient corruption channel identified in und_001.
+
+**Gaussian noise reasoning:** sigma=0.05 confirmed beneficial in und_001 Phase 3/4 (+11-39pp in padded regime). Now implemented cleanly in src/data.py as per-coordinate N(0, sigma^2) noise on real atoms only.
+
+**Config kept:** use_bidir_types=True, alpha_pos=10.0, alpha_neg=10.0, noise_sigma=0.05, augment_train=True, normalize_to_unit_var=True, log_det_reg_weight=0.0 (from und_001 Phase 3 Step E which achieved 40.2% VF).
+
+**alpha_pos=10.0 choice:** und_001 showed clamping is harmful in the padded regime (-30pp). Setting alpha_pos=10.0 (essentially unclamped at any realistic log_scale value) removes the saturation equilibrium without removing the functional form.
+
+### Phase 0 Plan (write-before-execute)
+1. Fix `_build_causal_mask()` in src/model.py: SOS at [0,0]=True, atoms at [i, :i]=True (strictly causal)
+2. Add `zero_padding_queries` param to TarFlowBlock and TarFlow
+3. Add PAD_TOKEN_IDX=4 constant to src/data.py
+4. Modify `encode_atom_types()` to accept pad_token_idx parameter
+5. Add `add_gaussian_noise()` function to src/data.py
+6. Update MD17Dataset and MultiMoleculeDataset to accept pad_token_idx and noise_sigma
+7. Update src/train.py: DEFAULT_CONFIG, model construction, dataset construction
+8. Write src/test_hyp005.py and run all 6 unit tests
+9. Commit code changes
+10. Run 500-step diagnostic (Config A + causal mask fix, ethanol, cuda:8)
+11. Write diagnostic_report.md
+
+### New Files Created (planned)
+- `src/test_hyp005.py` — unit tests for hyp_005 code changes
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/reports/diagnostic_report.md` — Phase 1 result
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/reports/plan_report.md` — Phase 2 plan
+
+### Phase 0 Results
+- Config A diagnostic (500 steps, ethanol, alpha_pos=10.0, noise=0.05, no padding fixes):
+  log_det/dof explodes to 12.97 at step 500. VF=0%. Log-det exploitation confirmed.
+  Root cause: alpha_pos=10.0 is too permissive — model has free license to accumulate log-det.
+  und_001's 40.2% used Apple architecture (not src/model.py) — different gradient dynamics.
+  SANITY fix: use alpha_pos=1.0 for 4-config ablation. This is the correct stabilization level.
+
+### Commits
+- f7cb104 — [hyp_005] code: Phase 0 code changes — causal mask fix, PAD token, query zeroing, Gaussian noise
+- f4d602a — [hyp_005] config: pre-run snapshot for diagnostic (Config A, ethanol, 500 steps)
+- be5bc49 — [hyp_005] results: diagnostic run — log-det exploitation confirmed, plan written
+- c810bca — [hyp_005] docs: plan report
+- 1d1486c — [hyp_005] config: SANITY 4 configs + val_subdir support in train.py
+
+---
+
+## 2026-03-03 — hyp_005 resumed: SANITY ablation + HEURISTICS
+**Branch:** `exp/hyp_005`
+
+### Context at Resume
+Previous PhD agent context exhausted after:
+1. Phase 0 code changes committed (f7cb104)
+2. Diagnostic run completed (500 steps, ethanol, Config A): log_det/dof=12.97, VF=0%
+3. Plan report written (plan_report.md)
+4. SANITY 4-config ablation started: Config A (1000 steps, alpha_pos=1.0) completed with VF=0%
+5. Configs B, C, D not yet run
+
+### Decisions & Reasoning
+
+**SANITY ablation continued:** Ran Configs B, C, D in parallel on GPUs 2, 3, 4 (all free with 272 MiB).
+GPU fix reminder: `CUDA_VISIBLE_DEVICES=N python3.10 src/train.py --device cuda:0`
+
+**SANITY results:**
+| Config | PAD token | Query zeroing | VF | log_det/dof |
+|--------|-----------|---------------|-----|-------------|
+| A | No | No | 0.000 | 7.26 |
+| B | Yes | No | 0.000 | 7.3 |
+| C | No | Yes | 0.000 | 7.3 |
+| D | Yes | Yes | 0.000 | 7.3 |
+
+Identical trajectories across all 4 configs — PAD token and query zeroing have ZERO effect on VF.
+Root cause: log-det exploitation at training dynamics level, not padding corruption.
+alpha_pos=1.0 allows log_det/dof to grow to 7.3 — still too large for valid samples.
+
+**HEURISTICS angle reassessment:**
+Original plan proposed masked LayerNorm. After SANITY results, this is clearly inapplicable:
+- Config D (full padding mitigation including query zeroing) still gives VF=0%
+- Query zeroing already silences padding from transformer — masked LayerNorm would be redundant
+- The failure is log-det exploitation, not LayerNorm contamination from padding
+
+**Applicable HEURISTICS: log_det_reg_weight > 0 (Andrade et al. 2024 / hyp_003)**
+- Directly addresses diagnosed failure mode (log-det exploitation)
+- Already implemented in src/model.py and src/train.py (no code changes needed)
+- Proven effective: hyp_003 achieved VF=29% on ethanol with log_det_reg_weight=5
+- Literature: Andrade et al. 2024 (cited in src/model.py line 875)
+- Applied to Config D (full padding mitigation) to cleanly test whether padded multi-molecule training
+  benefits from the log-det control that worked for single-molecule
+
+**HEURISTICS val (1000 steps, ethanol, log_det_reg_weight=2.0, lr=3e-4, Config D):**
+- W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/khw1bzkb
+- VF=0.027 (2.7%) — significant improvement from 0% (Config D with log_det_reg_weight=0)
+- log_det/dof=0.25 — stabilized! (vs 7.3 without regularization)
+- min_dist_mean=0.44 Å (vs 0.001 Å without regularization) — model is generating real geometry
+- BUT: grad_norm → 0 by step 200 — model converged/plateaued extremely early
+- Best checkpoint at step 200. Loss flat from step 200 to 1000.
+- Diagnosis: log_det_reg_weight=2.0 may be too strong, or 1000 steps not enough to escape plateau
+
+**HEURISTICS sweep design:**
+Grid search: log_det_reg_weight=[0.5, 1.0, 2.0] × lr=[1e-4, 3e-4, 5e-4], 3000 steps each.
+Note from hyp_003: best was log_det_reg_weight=5, lr=1e-4. But hyp_003 was single-molecule (no padding).
+Multi-molecule with padding may benefit from weaker regularization.
+W&B Sweep URL: https://wandb.ai/kaityrusnelson1/tnafmol/sweeps/kzkja8zy
+Sweep ID: kzkja8zy
+Agents on GPU 2 (CUDA_VISIBLE_DEVICES=2).
+
+### New Files Created
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/angles/sanity/val/config_a/config.json`
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/angles/sanity/val/config_b/config.json`
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/angles/sanity/val/config_c/config.json`
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/angles/sanity/val/config_d/config.json`
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/angles/heuristics/val/config.json`
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/angles/heuristics/sweep/sweep_config.json`
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/angles/heuristics/sweep/run_sweep.py`
+
+**HEURISTICS sweep results (kzkja8zy, 9 runs, 3000 steps each):**
+| reg_weight | lr | VF | min_dist_mean |
+|------------|----|----|---------------|
+| 0.5 | 1e-4 | 0.0% | 0.232 Å |
+| 0.5 | 3e-4 | 0.0% | 0.229 Å |
+| 0.5 | 5e-4 | 0.0% | 0.218 Å |
+| 1.0 | 1e-4 | 0.0% | 0.358 Å |
+| 1.0 | 3e-4 | 0.0% | 0.375 Å |
+| 1.0 | 5e-4 | 0.0% | 0.376 Å |
+| 2.0 | 1e-4 | 3.7% | 0.455 Å |
+| 2.0 | 3e-4 | 4.7% | 0.480 Å |
+| 2.0 | 5e-4 | 3.7% | 0.491 Å |
+
+Best: reg_weight=2.0, lr=3e-4 → VF=4.7%. Promising criterion (VF>40%) NOT MET.
+Pattern: equilibrium log_det/dof ≈ 1/(2*reg_weight). Only reg_weight=2.0 (equilibrium=0.25)
+produces any VF. All runs plateau at step 500. HEURISTICS FAILS.
+
+**SCALE skipped:**
+Failure mode is training objective equilibrium, not model capacity. Larger model converges
+to the same equilibrium faster (confirmed by hyp_003/004 precedent — best checkpoints always
+at step 500-1000 regardless of training budget). CLAUDE.md: "Skip a phase only if the diagnostic
+clearly shows it is not applicable." Criterion satisfied.
+
+**Final reporting:**
+- Optimize Failure Report written: experiments/hypothesis/hyp_005_padding_aware_tarflow/reports/final_report.md
+- notes.md updated with final results, story conflict flag, embedded figures
+- experiment_log.md updated with hyp_005 entry
+- Canonical plots generated:
+  - results/sanity_ablation.png (SANITY 4-config bar charts — all VF=0)
+  - results/heuristics_sweep.png (3×3 grid heatmaps: VF and min_dist_mean)
+  - results/min_dist_progression.png (monotonic improvement direction, insufficient magnitude)
+- make_plots.py: generated plots then deleted (scripts not permitted in experiment dirs)
+
+**Source integration:**
+- run_sweep.py removed from angles/heuristics/sweep/ (git rm; scripts must live in src/)
+- make_plots.py was generated and deleted in same session (never committed)
+- No .py files remain in experiment directory — confirmed by find
+
+**Status: Optimize Failure Report submitted to Postdoc. Awaiting merge and tag.**
+
+### New Files Created
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/angles/heuristics/sweep/summary.json`
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/reports/final_report.md`
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/results/sanity_ablation.png`
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/results/heuristics_sweep.png`
+- `experiments/hypothesis/hyp_005_padding_aware_tarflow/results/min_dist_progression.png`
+
+### Commits
+- 4a086f2 — [hyp_005] results: SANITY 4-config ablation complete — all VF=0, heuristics config added
+- a4901be — [hyp_005] docs: update state.json and process_log — HEURISTICS sweep in progress
+- 73354bd — [hyp_005] results: HEURISTICS sweep complete — best VF=4.7%, criterion not met
+- 2ef7b7f — [hyp_005] docs: final report, notes, plots, state — FAILURE. Source integration.
