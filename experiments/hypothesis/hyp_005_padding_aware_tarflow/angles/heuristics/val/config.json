@@ -2,7 +2,6 @@
   "exp_id": "hyp_005",
   "angle": "heuristics",
   "stage": "val",
-  "run_name_suffix": "heuristics_val_logdetreg",
   "command": "OPTIMIZE",
   "seed": 42,
   "device": "cuda:0",
@@ -18,26 +17,32 @@
   "use_actnorm": false,
   "use_bidir_types": true,
   "use_pos_enc": false,
+  "use_perm_aug": false,
   "use_pad_token": true,
   "zero_padding_queries": true,
   "noise_sigma": 0.05,
-  "log_det_reg_weight": 2.0,
   "n_steps": 1000,
   "batch_size": 128,
-  "lr": 3e-4,
+  "lr": 0.0003,
   "lr_schedule": "cosine",
   "warmup_steps": 100,
   "grad_clip_norm": 1.0,
   "val_interval": 200,
   "eval_n_samples": 300,
-  "betas": [0.9, 0.999],
+  "log_det_reg_weight": 2.0,
+  "betas": [
+    0.9,
+    0.999
+  ],
   "weight_decay": 1e-05,
   "use_ema": false,
+  "ema_decay": 0.999,
   "augment_train": true,
   "normalize_to_unit_var": true,
-  "use_perm_aug": false,
   "data_root": "data/",
-  "molecules": ["ethanol"],
+  "molecules": [
+    "ethanol"
+  ],
   "wandb_project": "tnafmol",
   "wandb_group": "hyp_005",
   "wandb_tags": [
@@ -48,5 +53,9 @@
     "val"
   ],
   "wandb_notes": "HEURISTICS val: log_det_reg_weight=2.0 + Config D (PAD token + query zeroing). lr=3e-4 (best from hyp_003). Targeting VF > 0.40 on ethanol at 1000 steps.",
-  "output_dir": "experiments/hypothesis/hyp_005_padding_aware_tarflow"
+  "output_dir": "experiments/hypothesis/hyp_005_padding_aware_tarflow",
+  "run_name_suffix": "heuristics_val_logdetreg",
+  "git_hash": "4a086f2e",
+  "global_std": 0.9165909886360168,
+  "n_atom_types": 5
 }

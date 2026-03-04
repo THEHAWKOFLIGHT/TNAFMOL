@@ -3,7 +3,7 @@
   "command": "OPTIMIZE",
   "status": "in_progress",
   "created": "2026-03-03T18:00:00Z",
-  "last_updated": "2026-03-03T20:00:00Z",
+  "last_updated": "2026-03-03T22:00:00Z",
   "machine": {
     "host": "localhost",
     "user": "kai_nelson",
@@ -25,7 +25,8 @@
       "angles/sanity/val/config_b/raw/",
       "angles/sanity/val/config_c/raw/",
       "angles/sanity/val/config_d/raw/",
-      "angles/heuristics/val/raw/"
+      "angles/heuristics/val/raw/",
+      "angles/heuristics/sweep/runs/"
     ]
   },
   "steps": [
@@ -81,39 +82,49 @@
     {
       "name": "angle_heuristics_val",
       "status": "completed",
-      "acceptance": "HEURISTICS validation run. Masked LayerNorm replaced by log_det_reg_weight=2.0 (Andrade et al. 2024) based on SANITY evidence that padding is not the failure mode. VF > 0 on ethanol.",
+      "acceptance": "HEURISTICS validation run. Masked LayerNorm replaced by log_det_reg_weight=2.0 (Andrade et al. 2024). VF > 0 on ethanol.",
       "completed_at": "2026-03-03T20:10:00Z",
-      "result": {"vf": 0.027, "log_det_dof": 0.25, "min_dist_mean": 0.443, "grad_norm_at_convergence": 0.003},
-      "wandb_run": "khw1bzkb",
-      "note": "VF=2.7% — qualitative improvement (from 0% with no reg). But plateau at step 200 (grad_norm→0). Direction is correct; sweep needed to find operating point."
+      "result": {"vf": 0.027, "log_det_dof": 0.25, "min_dist_mean": 0.443},
+      "wandb_run": "khw1bzkb"
     },
     {
       "name": "angle_heuristics_sweep",
-      "status": "in_progress",
+      "status": "completed",
       "acceptance": "W&B sweep completed; best config selected.",
+      "completed_at": "2026-03-03T22:00:00Z",
+      "result": {
+        "best_reg_weight": 2.0,
+        "best_lr": 3e-4,
+        "best_vf": 0.047,
+        "promising": false,
+        "note": "Best VF=4.7% at 3000 steps. Far below 40% criterion. All runs plateau at step 500."
+      },
       "wandb_sweep_id": "kzkja8zy",
-      "wandb_sweep_url": "https://wandb.ai/kaityrusnelson1/tnafmol/sweeps/kzkja8zy",
-      "started_at": "2026-03-03T20:15:00Z"
+      "wandb_sweep_url": "https://wandb.ai/kaityrusnelson1/tnafmol/sweeps/kzkja8zy"
     },
     {
       "name": "angle_heuristics_full",
-      "status": "pending",
-      "acceptance": "Full training run on best HEURISTICS config."
+      "status": "skipped",
+      "reason": "Sweep failed promising criterion (best VF=4.7%, criterion 40%). No full run warranted.",
+      "skipped_at": "2026-03-03T22:00:00Z"
     },
     {
       "name": "angle_scale_val",
-      "status": "pending",
-      "acceptance": "SCALE validation run (d_model=256, n_blocks=12, 50k steps) if needed."
+      "status": "skipped",
+      "reason": "SCALE skipped: failure is training objective equilibrium (log_det_dof ≈ 1/(2*reg_weight) regardless of capacity). Larger model converges to same equilibrium. Confirmed by hyp_003/004 precedent.",
+      "skipped_at": "2026-03-03T22:00:00Z"
     },
     {
       "name": "angle_scale_sweep",
-      "status": "pending",
-      "acceptance": "W&B sweep on SCALE config if val is promising."
+      "status": "skipped",
+      "reason": "SCALE skipped (see angle_scale_val).",
+      "skipped_at": "2026-03-03T22:00:00Z"
     },
     {
       "name": "angle_scale_full",
-      "status": "pending",
-      "acceptance": "Full training run on best SCALE config."
+      "status": "skipped",
+      "reason": "SCALE skipped (see angle_scale_val).",
+      "skipped_at": "2026-03-03T22:00:00Z"
     },
     {
       "name": "source_integration",
@@ -122,8 +133,9 @@
     },
     {
       "name": "final_report",
-      "status": "pending",
-      "acceptance": "Final Experiment Report written to reports/final_report.md."
+      "status": "completed",
+      "acceptance": "Final Experiment Report written to reports/final_report.md.",
+      "completed_at": "2026-03-03T22:00:00Z"
     },
     {
       "name": "merge_and_tag",
