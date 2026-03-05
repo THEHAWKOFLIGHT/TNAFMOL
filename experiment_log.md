@@ -373,3 +373,42 @@ Finding: PAD token and query zeroing have ZERO effect on log-det exploitation. F
 **Key finding:** Output-shift architecture is correct and stable. The VF plateau (~25% ceiling) is a remaining open problem — likely caused by overlap (mean min_dist 0.45-0.65 Å vs 0.8 Å threshold) and/or normalization mismatch across molecules.
 
 **W&B runs:** diagnostic=1yd68tmf, sanity=p6voeuas, sanity_alpha1=70775xvm, heur_val=6dn3s9fa, scale_val=paxf84nt
+
+---
+
+## hyp_007 — Padding Isolation + Multi-Molecule OPTIMIZE
+**Date:** 2026-03-05 → 2026-03-06
+**Branch:** `exp/hyp_007`
+**Config:** output-shift TarFlow, n_blocks=8, d_model=128, 8 MD17 molecules, ldr=5.0, lr=3e-4
+**Status:** DONE — both success criteria met after HEURISTICS angle
+
+### Phase 1 — Padding Isolation Gate
+Ethanol-only TarFlow at max_atoms ∈ {9,12,15,18,21}, 5000 steps each. Verified output-shift makes padding neutral.
+- T=9: 34.8%, T=12: 35.2%, T=15: 33.0%, T=18: 31.2%, T=21: 34.8%
+- Max drop 4.0pp across all sizes. GATE PASSED.
+
+### Phase 2 SANITY — FAILED
+20k steps, all 8 molecules, ldr=0.0. Log-det exploitation detected (log_det/dof → 1.2+). Val loss rose monotonically from step 1000.
+- lr=1e-3: ethanol VF=17.6%, mean VF=13.9%
+- lr=3e-4: ethanol VF=12.2%, mean VF=11.1%
+Root cause: ldr=0 allows log-det exploitation in multi-molecule training.
+
+### Phase 2 HEURISTICS — SUCCESS
+Sweep: ldr ∈ {1.0, 5.0} × lr ∈ {1e-3, 3e-4} × n_steps ∈ {20k, 50k}. 6 runs completed.
+- Best: ldr=5.0, lr=3e-4, 20k steps → ethanol VF=55.8%, mean VF=34.7%
+- ldr=5.0 is critical: all ldr=5.0 runs >50% ethanol VF; ldr=1.0 stays <41%
+
+### Full Run (Best Config)
+- Best checkpoint: step 12000/20000, val_loss=1.1902
+- Ethanol: 55.8% | Malonaldehyde: 53.2% | Benzene: 42.8% | Uracil: 39.4%
+- Toluene: 29.8% | Salicylic_acid: 24.6% | Naphthalene: 22.4% | Aspirin: 9.2%
+- Mean VF: 34.7% | Mols >50%: 2/8
+
+### Criteria Assessment
+- Ethanol VF = 55.8% > 40% ✓
+- Mean VF = 34.7% > 30% ✓
+Both criteria met. SCALE skipped.
+
+**Key finding:** ldr=5.0 (same as hyp_003 single-molecule) resolves multi-molecule log-det exploitation. Aspirin (21 atoms, 9.2% VF) is the main outlier — model capacity may be insufficient for the largest molecule in a shared-model multi-molecule setup.
+
+**W&B full run:** https://wandb.ai/kaityrusnelson1/tnafmol/runs/2r296jrf
