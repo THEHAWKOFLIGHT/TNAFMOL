@@ -114,8 +114,9 @@
     },
     {
       "name": "final_report",
-      "status": "in_progress",
-      "acceptance": "Final experiment report written with all results, plots, analysis."
+      "status": "completed",
+      "acceptance": "Final experiment report written with all results, plots, analysis.",
+      "completed_at": "2026-03-06T10:30:00Z"
     },
     {
       "name": "source_integration",
