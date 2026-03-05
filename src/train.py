@@ -89,6 +89,9 @@ DEFAULT_CONFIG = {
     # hyp_006 output-shift flag (default False for backward compatibility)
     "use_output_shift": False,   # use Apple's output-shift mechanism instead of SOS+strictly-causal
 
+    # hyp_008 per-dimension scale flag (default False for backward compatibility)
+    "per_dim_scale": False,      # True = 3 independent scales per atom (Apple-style, hyp_008)
+
     # Training
     "n_steps": 500,          # default: diagnostic run
     "batch_size": 128,
@@ -361,6 +364,7 @@ def train(cfg: dict):
         use_pos_enc=cfg.get("use_pos_enc", False),
         zero_padding_queries=cfg.get("zero_padding_queries", False),
         use_output_shift=cfg.get("use_output_shift", False),
+        per_dim_scale=cfg.get("per_dim_scale", False),
     ).to(device)
     cfg["n_atom_types"] = n_atom_types  # log to wandb config
 

@@ -1,0 +1,96 @@
+{
+  "exp_id": "hyp_008",
+  "command": "OPTIMIZE",
+  "status": "in_progress",
+  "created": "2026-03-05T22:00:00Z",
+  "last_updated": "2026-03-05T23:45:00Z",
+  "machine": {
+    "host": "localhost",
+    "user": "kai_nelson",
+    "gpu": "cuda:8",
+    "pid": null,
+    "claude_session_id": null
+  },
+  "artifacts": {
+    "dataset": "data/",
+    "checkpoints": [],
+    "raw_outputs": []
+  },
+  "steps": [
+    {
+      "name": "implementation",
+      "status": "completed",
+      "acceptance": "per_dim_scale added to model.py and train.py; all unit tests pass (forward-inverse consistency, log-det correctness, backward compat, Jacobian triangularity)",
+      "completed_at": "2026-03-05T22:30:00Z",
+      "result": {
+        "unit_tests": 6,
+        "unit_tests_passed": 6,
+        "commits": ["8df4716", "fdd49a1"]
+      }
+    },
+    {
+      "name": "phase1_validation",
+      "status": "completed",
+      "acceptance": "Single-molecule ethanol (T=9, no padding) achieves VF >= 90% with per_dim_scale=True",
+      "completed_at": "2026-03-05T23:45:00Z",
+      "result": {
+        "outcome": "FAILED — best VF 39.2% (8 blocks, ldr=0, step 500), target 90%",
+        "runs": [
+          {"config": "4b_ldr0", "vf": 0.272, "wandb": "mpx5bh9g"},
+          {"config": "4b_ldr5", "vf": 0.274, "wandb": "nn0weqoy"},
+          {"config": "8b_ldr0", "vf": 0.392, "wandb": "pwdbuaf0"},
+          {"config": "8b_ldr5", "vf": 0.290, "wandb": "sr581ia3"}
+        ],
+        "re_diagnosis": "per_dim_scale has <1pp effect (und_001 Phase 4). True root cause: post-norm vs pre-norm, layers_per_block=1 vs 2.",
+        "final_report": "reports/final_report.md"
+      }
+    },
+    {
+      "name": "phase2_padding",
+      "status": "skipped",
+      "reason": "Phase 1 failed — T=9 single-molecule VF only 39.2%, far below 90% gate. Phase 2 requires Phase 1 passage.",
+      "skipped_at": "2026-03-05T23:45:00Z"
+    },
+    {
+      "name": "phase3_sanity",
+      "status": "skipped",
+      "reason": "Phase 1 failed — skipped per plan.",
+      "skipped_at": "2026-03-05T23:45:00Z"
+    },
+    {
+      "name": "phase3_heuristics",
+      "status": "skipped",
+      "reason": "Phase 1 failed — skipped per plan.",
+      "skipped_at": "2026-03-05T23:45:00Z"
+    },
+    {
+      "name": "phase3_scale",
+      "status": "skipped",
+      "reason": "Phase 1 failed — skipped per plan.",
+      "skipped_at": "2026-03-05T23:45:00Z"
+    },
+    {
+      "name": "final_report",
+      "status": "completed",
+      "acceptance": "Final report written to reports/final_report.md with all results",
+      "completed_at": "2026-03-05T23:45:00Z",
+      "result": {
+        "path": "reports/final_report.md"
+      }
+    },
+    {
+      "name": "source_integration",
+      "status": "completed",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice",
+      "completed_at": "2026-03-06T00:00:00Z",
+      "result": {
+        "note": "N/A — all code already in src/. No .py files in experiment dir. No __pycache__."
+      }
+    },
+    {
+      "name": "merge_and_tag",
+      "status": "pending",
+      "acceptance": "Merged to main with tag hyp_008; pre-merge checks pass"
+    }
+  ]
+}

@@ -1282,4 +1282,76 @@ SCALE skipped — both criteria met.
 - `b82e77b` — [hyp_007] code: add max_atoms parameter to data pipeline and train loop
 - `2cfe17e` — [hyp_007] config: Phase 1 configs + Phase 2 SANITY configs + HEURISTICS sweep
 - `0c0500c` — [hyp_007] config: fix Slurm script conda activation for non-interactive shell
-- `b179e1e` — [hyp_007] results: HEURISTICS full run SUCCESS — ethanol VF=55.8%, mean VF=34.7%
+
+---
+
+## 2026-03-05 — hyp_008: Per-Dimension Scale + Architecture Alignment
+**Branch:** `exp/hyp_008`
+
+### Decisions & Reasoning
+- Root cause from hyp_007 Phase 1: shared scale (1 scalar per atom) vs per-dimension scale (3 scalars per atom) — 61pp VF gap between our model and Apple TarFlow
+- Per-dimension scale: out_proj outputs 6 values (3 shift + 3 log_scale) instead of 4
+- Log-det changes: sum over (B,N,3) log_scale tensor instead of 3.0 * scalar per atom — exact same total DOF count, just independent per dimension
+- Backward compat: per_dim_scale=False default, no change to existing behavior
+- SOS path: NOT modified for per_dim_scale (only output-shift path tested in hyp_008)
+- Architecture alignment: d_model=256, dropout=0.0, use_pos_enc=True, alpha=10.0 (loose clamping)
+- Three-phase execution: Phase 1 gate (ethanol, VF>=90%), Phase 2 padding (2 runs), Phase 3 multi-mol OPTIMIZE
+
+### Plan: Implementation Steps
+1. Add per_dim_scale parameter to TarFlowBlock.__init__ → out_dim = 3 if shift_only else (6 if per_dim_scale else 4)
+2. Update forward() output-shift path: extract log_scale as (B,N,3) when per_dim_scale=True; log_det = (log_scale * mask.unsqueeze(-1)).sum(dim=(-1,-2))
+3. Update inverse() output-shift path: extract log_scale_step as (B,3) instead of (B,1)
+4. Add per_dim_scale to TarFlow.__init__, propagate to all TarFlowBlock constructors
+5. Add "per_dim_scale": False to DEFAULT_CONFIG in train.py; propagate to TarFlow constructor
+6. Run unit tests: forward-inverse consistency, backward compat, log-det correctness, Jacobian
+
+### New Files to Create
+- `experiments/hypothesis/hyp_008_per_dim_scale/reports/diagnostic_report.md`
+- `experiments/hypothesis/hyp_008_per_dim_scale/reports/plan_report.md`
+- `experiments/hypothesis/hyp_008_per_dim_scale/reports/final_report.md`
+
+### Phase 1 Investigation Results (2026-03-05)
+
+INTENTION (write-before-execute): Run 4 Phase 1 investigation configs on cuda:8. Expect VF>=90%.
+If <90%, investigate with n_blocks=8 and/or ldr=5.0 per plan_report.md.
+
+4 configs executed on cuda:8 (test GPU, direct python3):
+1. 4 blocks, ldr=0.0 → VF=27.2%, log_det/dof=1.4+ (exploded). W&B: mpx5bh9g
+2. 4 blocks, ldr=5.0 → VF=27.4%, log_det/dof=0.09 (stable). W&B: nn0weqoy
+3. 8 blocks, ldr=0.0 → VF=39.2% at step 500 then collapsed. W&B: pwdbuaf0
+4. 8 blocks, ldr=5.0 → VF=29.0%. W&B: sr581ia3
+
+Phase 1 gate (VF>=90%) NOT MET. Best: 39.2% (8 blocks, ldr=0, step 500).
+
+### Re-Diagnosis from und_001 (2026-03-05)
+
+After 4 failed Phase 1 runs, re-read und_001 Phase 4 ablation data:
+- Config 2 (tarflow_apple.py, T=9, noise, per-dim scale): 96.2% VF
+- Config 3 (tarflow_apple.py, T=9, noise, shared scale): 95.3% VF
+- Difference: <1pp — per_dim_scale does NOT explain the 61pp gap
+
+Original diagnostic hypothesis was WRONG. The true root cause is architectural:
+1. Post-norm (model.py) vs pre-norm (tarflow_apple.py) — §8b of source_comparison.md
+2. 1 attention layer/block (model.py) vs 2 layers/block (tarflow_apple.py) — §8a
+3. Clamping present in model.py (alpha_pos=10.0), none in tarflow_apple.py
+
+Evidence: adaptation ladder Step E (tarflow_apple.py, shared scale, T=21+noise) = 40.2% VF.
+Our best run (model.py, per_dim_scale=True, 8 blocks) = 39.2%. Near-identical — the
+per_dim_scale change in model.py is irrelevant because we still have the architectural gap.
+
+Decision: Write final_report.md as OPTIMIZE FAILURE. Keep per_dim_scale implementation
+in model.py (correct, no negative effect). Escalate to Postdoc with updated diagnosis.
+
+### New Files Created
+- `experiments/hypothesis/hyp_008_per_dim_scale/reports/diagnostic_report.md` — original (wrong) root cause
+- `experiments/hypothesis/hyp_008_per_dim_scale/reports/plan_report.md` — three-phase execution plan
+- `experiments/hypothesis/hyp_008_per_dim_scale/angles/sanity/val/config_phase1_ethanol.json`
+- `experiments/hypothesis/hyp_008_per_dim_scale/angles/sanity/val/config_phase1_ethanol_ldr5.json`
+- `experiments/hypothesis/hyp_008_per_dim_scale/angles/sanity/val/config_phase1_ethanol_8blocks.json`
+- `experiments/hypothesis/hyp_008_per_dim_scale/angles/sanity/val/config_phase1_ethanol_8blocks_ldr5.json`
+- `experiments/hypothesis/hyp_008_per_dim_scale/reports/final_report.md` — OPTIMIZE failure + re-diagnosis
+
+### Commits
+- `8df4716` — [hyp_008] code: add per_dim_scale to model and train
+- `fdd49a1` — [hyp_008] config: pre-run snapshot for phase1_ethanol
+- `3717c8b` — [hyp_008] results: Phase 1 investigation FAILED — best VF 39.2%, re-diagnosis
