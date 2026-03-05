@@ -1,0 +1,56 @@
+{
+  "exp_id": "hyp_009",
+  "command": "OPTIMIZE",
+  "status": "in_progress",
+  "created": "2026-03-06T00:00:00Z",
+  "last_updated": "2026-03-06T00:00:00Z",
+  "machine": {
+    "host": "localhost",
+    "user": "kai_nelson",
+    "gpu": "cuda:8",
+    "pid": null,
+    "claude_session_id": null
+  },
+  "artifacts": {
+    "dataset": "data/",
+    "checkpoints": [],
+    "raw_outputs": []
+  },
+  "steps": [
+    {
+      "name": "implementation",
+      "status": "pending",
+      "acceptance": "src/model.py updated with use_pre_norm and layers_per_block; src/train.py updated with new config params; all unit tests pass including backward compat, pre-norm + layers_per_block=2 forward-inverse consistency, and Jacobian triangularity check"
+    },
+    {
+      "name": "phase1_val_run",
+      "status": "pending",
+      "acceptance": "Training run on ethanol T=9 with use_pre_norm=True, layers_per_block=2, dropout=0.0 complete; VF result recorded in experiment log"
+    },
+    {
+      "name": "phase1_gate_check",
+      "status": "pending",
+      "acceptance": "VF >= 90% on ethanol T=9 (proceed to Phase 2) OR investigation of remaining gap documented"
+    },
+    {
+      "name": "phase2_padding_validation",
+      "status": "pending",
+      "acceptance": "Ethanol T=9 and T=21 runs complete; |VF(T=9) - VF(T=21)| < 10pp documented"
+    },
+    {
+      "name": "phase3_optimize",
+      "status": "pending",
+      "acceptance": "OPTIMIZE protocol complete (SANITY angle + HEURISTICS/SCALE if needed); best multi-molecule result documented"
+    },
+    {
+      "name": "source_integration",
+      "status": "pending",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice; pre-merge checks pass"
+    },
+    {
+      "name": "merge_and_tag",
+      "status": "pending",
+      "acceptance": "Merged to main with tag hyp_009; pre-merge checks pass"
+    }
+  ]
+}
