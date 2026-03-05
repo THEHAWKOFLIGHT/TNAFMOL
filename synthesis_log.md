@@ -324,3 +324,99 @@ The padding fixes (PAD token, query zeroing) are CORRECT but INSUFFICIENT. The a
 **Story impact:** CONFLICT with current research story. The story (post-und_001) predicted that fixing padding corruption channels would enable multi-molecule TarFlow. This prediction failed — padding fixes have zero measurable effect while log-det exploitation dominates. The SOS+causal architecture in src/model.py has fundamentally different gradient dynamics than Apple's output-shift architecture used in und_001. The story needs updating: padding fixes are necessary but not sufficient; the architecture difference (SOS+causal vs output-shift) may be the deeper issue.
 
 **Open question for user:** The untested combination (alpha_pos=0.02 + reg_weight=5 + Config D in multi-molecule) could bridge the single→multi gap. Also, switching to Apple's output-shift architecture for multi-molecule training is a potential next step.
+
+---
+
+### 2026-03-04 — hyp_006 synthesis
+**Status:** FAILURE | **Failure level:** None
+**Branch:** `exp/hyp_006` | **Merge commit:** `67ef49f` | **Tag:** `hyp_006`
+
+**Experiment:** Output-Shift Multi-Molecule TarFlow OPTIMIZE. Replaced the SOS+strictly-causal-mask autoregressive mechanism with Apple's output-shift architecture: `params = cat([zeros_like(params[:,:1,:]), params[:,:-1,:]], dim=1)` with self-inclusive causal mask (`torch.tril`). The hypothesis: output-shift eliminates the log-det exploitation pathway because the autoregressive structure is enforced by the shift, not the mask — token 0 always gets zero params (identity transform), preventing runaway scale growth.
+
+**PhD execution review:**
+- Single PhD agent completed all work (no context exhaustion, no send-backs)
+- Code changes: `use_output_shift` flag added to TarFlowBlock and TarFlow in src/model.py, new `_run_transformer_output_shift()` method with self-inclusive causal mask, forward/inverse paths updated, zero-init of out_proj preserved. src/train.py updated with config support. 7/7 unit tests pass (output shift zeros, self-inclusive causal mask, no SOS in sequence, forward-inverse consistency, backward compatibility, zero-init, Jacobian triangularity).
+- OPTIMIZE protocol followed correctly: diagnostic → SANITY (val) → HEURISTICS (val → 3-run sweep) → SCALE (val) → all angles exhausted → FAILURE
+- All W&B runs properly tagged and grouped (group: hyp_006)
+- Logs maintained (process_log.md, experiment_log.md — both updated with hyp_006 entries)
+- .state.json updated throughout execution with results and W&B IDs
+- Source integration completed: no .py files in experiment dir, all code already in src/model.py and src/train.py
+- 7 commits on exp/hyp_006 (including postdoc state commit), all follow convention
+- No hardcoded reference values — global_std loaded from data
+
+**OPTIMIZE angle review:**
+1. **Diagnostic (500 steps, ethanol, alpha_pos=10.0, no regularization):**
+   - log_det/dof at step 500: 0.516 — well below 5.0 threshold
+   - **HYPOTHESIS CONFIRMED.** Output-shift eliminates log-det exploitation.
+   - SOS architecture at same settings: log_det/dof > 7.0 by step 500
+   - VF at step 500: 11.4% (already 2.4x better than hyp_005 best)
+   - W&B: 1yd68tmf
+
+2. **SANITY (1000 steps, all 8 molecules, alpha_pos=10.0 and alpha_pos=1.0 fallback):**
+   - alpha_pos=10.0: mean VF 13.8%, ethanol 13.4%
+   - alpha_pos=1.0: mean VF 13.2%, ethanol 13.2% — nearly identical (alpha_pos is irrelevant with output-shift)
+   - Promising but below 40% criterion — training budget insufficient at 1k steps
+   - Sweep skipped (no free parameters in SANITY). Full run skipped (below criterion). Correct per protocol.
+   - W&B: p6voeuas, 70775xvm
+
+3. **HEURISTICS (SBG recipe, Tan et al. 2025):**
+   - Citation verified: SBG recipe published at ICML 2025. Same technique used in hyp_004 (lr=1e-3, OneCycleLR, EMA).
+   - Val run (3000 steps, lr=1e-3, OneCycleLR): VF 15.0% ethanol — not meeting 40% criterion
+   - 3-run sweep (5000 steps, cosine schedule, lr=[3e-4, 5e-4, 1e-3]):
+     - Sweep A (lr=3e-4): 17.0% ethanol, 16.3% mean
+     - Sweep B (lr=5e-4): 19.8% ethanol, 15.1% mean
+     - Sweep C (lr=1e-3): **24.8% ethanol, 16.3% mean** — best result
+   - Promising criterion (VF>40%) not met. Full run skipped. Correct per protocol.
+   - VF plateau pattern (13-25%) across all configs indicates fundamental limitation
+   - Assessment: VF improvement with lr but all configs plateau — capacity or normalization bottleneck
+
+4. **SCALE (d_model=256, n_blocks=12, 9.6M params, lr=5e-4, cosine, 5000 steps):**
+   - VF 16.2% ethanol, 13.7% mean — WORSE than HEURISTICS best (24.8%)
+   - Best val loss at step 1000; val loss diverges after that — overfitting
+   - Promising criterion (VF>25%) not met. Sweep and full run skipped. Correct per protocol.
+   - Larger model provides no benefit — VF bottleneck is not capacity.
+   - W&B: paxf84nt
+
+**Key findings:**
+- **Hypothesis CONFIRMED.** Output-shift bounds log_det/dof at 0.5-1.3 throughout training, vs 7+ for SOS. The log-det exploitation pathway is completely eliminated.
+- **VF criterion NOT MET.** Best: 24.8% ethanol (HEUR C, lr=1e-3, cosine, 5k steps). Far below 40% target.
+- **Root cause of low VF:** generated samples have mean min pairwise distances of 0.45-0.65 Å (threshold: 0.8 Å) — model generates geometries with persistent atom overlaps. This is a different problem from log-det exploitation.
+- **Molecule-size correlation:** smaller molecules (benzene 12 atoms, malonaldehyde 9 atoms) have higher VF than larger molecules (naphthalene 18 atoms, aspirin 21 atoms). More atoms = more chances for overlap.
+- **Overfitting at SCALE:** 9.6M param model overfits at 5k steps. VF does not improve with capacity.
+
+**Postdoc verification:**
+- Reviewed final_report.md: technically sound, root cause analysis correct, story validation appropriate
+- Reviewed diagnostic_report.md: hypothesis confirmation decisive (0.516 vs 7+ at step 500)
+- Reviewed plan_report.md: correct priority order, validation criteria appropriate
+- Verified .state.json: all steps completed/skipped, artifacts listed, machine block populated
+- Reviewed all 4 canonical plots in results/: vf_per_molecule_all_angles, ethanol_mean_vf_comparison, best_run_molecule_breakdown, logdet_dof_trajectory
+- Pre-merge consistency checks: all passed
+
+**Pre-merge checks:**
+- [x] No .py files in experiments/hyp_006
+- [x] No __pycache__/
+- [x] No TASK_BRIEF.md
+- [x] data/ exists with 8 versioned datasets
+- [x] results/ folder contains 4 canonical plots + best.pt
+- [x] .state.json all steps completed/skipped
+- [x] reports/ has diagnostic_report.md, plan_report.md, final_report.md
+- [x] experiment_log.md has hyp_006 entry
+- [x] process_log.md has hyp_006 entries with commits section
+- [x] synthesis_log.md is append-only
+- [x] All 7 commits follow convention
+- [x] Branch name follows convention (exp/hyp_006)
+- [x] Working tree clean (untracked files only)
+
+**PhD execution quality:** CLEAN — no send-backs needed. Single PhD agent completed all work. The failure is an experimental outcome (VF plateau), not an implementation error. The architectural fix (output-shift) was correctly implemented and validated.
+
+**W&B runs:**
+- Diagnostic: 1yd68tmf
+- SANITY val (alpha_pos=10): p6voeuas
+- SANITY val (alpha_pos=1): 70775xvm
+- HEURISTICS val: 6dn3s9fa
+- HEURISTICS sweep A: bvgd1dzr5
+- HEURISTICS sweep B: bp9xdspme
+- HEURISTICS sweep C: (in wandb group hyp_006)
+- SCALE val: paxf84nt
+
+**Story impact:** The output-shift architecture resolves hyp_005's identified bottleneck (SOS+causal log-det exploitation). This is the correct architectural platform for multi-molecule TarFlow going forward. The remaining VF gap (best 24.8% vs 98% per-molecule) points to a new failure mode: coordinate normalization or training dynamics, not log-det exploitation. The research story's Open Risk [ACTIVE — hyp_006] is now RESOLVED for the architectural question, with a new risk about the VF plateau replacing it.

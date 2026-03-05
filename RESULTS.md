@@ -1,8 +1,8 @@
 # TNAFMOL — Results
-**Last updated:** 2026-03-03 after hyp_005
+**Last updated:** 2026-03-04 after hyp_006
 
 ## Status
-TarFlow achieves 98.2% mean VF per-molecule (no padding) but only 4.7% VF in multi-molecule (padded) mode even with full padding mitigation. The padding fixes (PAD token, query zeroing) are correct but have zero measurable effect — the bottleneck is log-det exploitation in the SOS+causal architecture, which persists regardless of padding treatment. The 10x degradation from single-molecule to multi-molecule is unexplained. Next direction requires user decision: test hyp_003-best config in multi-molecule, or switch to Apple's output-shift architecture.
+Output-shift architecture eliminates log-det exploitation (log_det/dof bounded 0.5-1.3 vs 7+ for SOS). Best multi-molecule VF: 24.8% ethanol (hyp_006 HEURISTICS C, lr=1e-3, cosine, 5k steps). Architecture ceiling per-molecule (no padding): 98.2% mean VF (und_001). The remaining VF gap (25% vs 98%) is due to atom overlaps in generated samples, likely caused by normalization mismatch — not log-det exploitation or padding corruption.
 
 ## Experiments
 
@@ -13,12 +13,13 @@ TarFlow achieves 98.2% mean VF per-molecule (no padding) but only 4.7% VF in mul
 | hyp_003 | TarFlow stabilization (clamp + reg) | 18.3% mean | Alpha_pos saturation equilibrium | FAILURE |
 | hyp_004 | TarFlow architectural ablation (pos_enc + SBG) | 29.5% mean (sweep) | Improvements within buggy equilibrium | PARTIAL |
 | und_001 | TarFlow Diagnostic Ladder | 98.2% mean (no pad) | Padding is sole failure; bugs found + fixed | DONE |
-| **hyp_005** | **Padding-Aware TarFlow (PAD token + query zeroing)** | **4.7% (ethanol)** | **Padding fixes have zero effect; log-det exploitation persists** | **FAILURE** |
+| hyp_005 | Padding-Aware TarFlow (PAD token + query zeroing) | 4.7% (ethanol) | Padding fixes have zero effect; log-det exploitation persists | FAILURE |
+| **hyp_006** | **Output-Shift TarFlow (Apple architecture)** | **24.8% (ethanol)** | **Hypothesis CONFIRMED: log-det exploitation eliminated. VF plateau at 13-25%.** | **FAILURE** |
 
 ## Best Result
-**und_001:** TarFlow Diagnostic Ladder. Architecture ceiling = 98.2% mean VF across all 8 molecules with T=n_real (no padding). Range: 94.3% (aspirin, 21 atoms) to 100% (naphthalene, benzene). Multi-molecule padded (T=21): 20.8% mean VF.
+**und_001:** Architecture ceiling = 98.2% mean VF across all 8 molecules with T=n_real (no padding). Range: 94.3% (aspirin) to 100% (naphthalene, benzene).
 
-**hyp_005 (multi-molecule with padding fixes):** Best VF=4.7% on ethanol with Config D (PAD token + query zeroing) + reg_weight=2.0. Far below 50% target. SANITY 2x2 factorial showed all 4 padding configs produce identical VF=0% and log_det/dof=7.3 — padding fixes have zero effect on the training dynamics.
+**hyp_006 (multi-molecule with output-shift):** Best VF=24.8% on ethanol with HEURISTICS C (lr=1e-3, cosine, 5k steps). log_det/dof bounded at 0.5-1.3 throughout training — exploitation pathway eliminated. Benzene 27.6%, malonaldehyde 23.8%, toluene 19.6%. SCALE (9.6M params) overfits and performs worse (16.2%).
 
 ## What's Next
-User decision needed. Options: (1) Test alpha_pos=0.02 + reg_weight=5 + Config D in multi-molecule (hyp_003's best recipe was never tested with padding fixes), (2) Switch to Apple's output-shift architecture for multi-molecule training (different Jacobian structure may avoid the log-det issue), (3) Proceed with per-molecule TarFlow (T=n_real, no padding) for DDPM comparison — bypasses the padding problem entirely.
+The output-shift architecture is now the correct platform for multi-molecule TarFlow. The remaining VF gap (25% vs 98%) is a normalization/training dynamics issue, not architectural. Next steps: (A) per-atom-type normalization instead of global std, (B) extend HEUR C to 20k-50k steps with careful lr scheduling, (C) internal coordinates (bonds, angles, dihedrals) instead of Cartesian, (D) per-molecule training on output-shift platform for DDPM comparison.

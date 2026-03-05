@@ -67,3 +67,14 @@ Append-only log. One entry per experiment.
 **Failure modes:** None (experiment-level). Failure is log-det exploitation in SOS+causal architecture independent of padding treatment.
 **Story fit:** CONFLICT — und_001 predicted padding fixes would restore multi-molecule VF. Prediction failed. Padding fixes correct but insufficient.
 **Concerns:** 10x degradation from single-molecule to multi-molecule unexplained. Key untested: alpha_pos=0.02 + reg_weight=5 + Config D in multi-molecule.
+
+---
+
+### hyp_006 — Output-Shift Multi-Molecule TarFlow
+**Date:** 2026-03-04 | **Status:** FAILURE
+**Tag:** `hyp_006` | **Merge commit:** `67ef49f`
+**Result:** Hypothesis CONFIRMED: output-shift bounds log_det/dof at 0.5-1.3 (vs 7+ for SOS). Best VF=24.8% ethanol (HEUR C, lr=1e-3, cosine, 5k steps). All 3 angles exhausted. Primary criterion (VF>40%) not met.
+**PhD quality:** CLEAN — single PhD agent, no send-backs. 7/7 unit tests, all runs completed cleanly.
+**Failure modes:** None (experiment-level). VF plateau (13-25%) across all configs — root cause is atom overlap in generated samples, not log-det exploitation.
+**Story fit:** FITS — the architectural hypothesis is confirmed (output-shift eliminates exploitation). VF gap points to normalization/training dynamics issue, not architecture.
+**Concerns:** VF plateau despite bounded log_det. SCALE model overfits. Best checkpoint always at step 1000 regardless of total budget.
