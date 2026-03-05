@@ -120,8 +120,10 @@
     },
     {
       "name": "source_integration",
-      "status": "pending",
-      "acceptance": "No .py files in experiment dir; src/ reflects current practice."
+      "status": "completed",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice.",
+      "completed_at": "2026-03-06T11:00:00Z",
+      "result": {"removed": ["verify_max_atoms.py", "generate_plots.py"], "src_current": true}
     },
     {
       "name": "merge_and_tag",
