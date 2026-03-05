@@ -1000,3 +1000,78 @@ clearly shows it is not applicable." Criterion satisfied.
 - a4901be — [hyp_005] docs: update state.json and process_log — HEURISTICS sweep in progress
 - 73354bd — [hyp_005] results: HEURISTICS sweep complete — best VF=4.7%, criterion not met
 - 2ef7b7f — [hyp_005] docs: final report, notes, plots, state — FAILURE. Source integration.
+
+---
+
+## 2026-03-04 — hyp_006 Output-Shift TarFlow Implementation
+**Branch:** `exp/hyp_006`
+
+### Decisions & Reasoning
+
+**Plan:**
+1. Implement `use_output_shift` mode in `src/model.py`:
+   - New `_run_transformer_output_shift()` method: self-inclusive causal mask (N×N not N+1×N+1), no SOS, runs on N tokens
+   - Modified `forward()`: conditional branch — output-shift path when flag=True, SOS path unchanged
+   - Modified `inverse()`: autoregressive decoding using output shift (position i params from output at position i-1)
+   - Zero-init out_proj when use_output_shift=True
+   - pos_embed needs only max_atoms entries (not max_atoms+1) when output-shift
+
+2. Add `use_output_shift: False` to DEFAULT_CONFIG in `src/train.py` and pass to TarFlow constructor.
+
+3. Run unit tests verifying: zero params at token 0, self-inclusive causal mask, no SOS in sequence, forward-inverse consistency, backward compat, zero-init, Jacobian triangularity.
+
+4. Run diagnostic (500 steps, ethanol, cuda:8): check log_det/dof < 5.0 at step 500.
+
+**Key insight from Apple's tarflow_apple.py (MetaBlock):**
+- Self-inclusive causal mask: torch.tril(ones(N, N)) — token i attends to 0..i (including itself)
+- Output shift: x = cat([zeros_like(x[:,:1]), x[:,:-1]], dim=1) AFTER proj_out
+  - This means params for position i come from transformer output at position i-1
+  - Position 0 gets zero params → identity transform
+- Zero-init proj_out: proj_out.weight.data.fill_(0.0) ensures stable start
+- No SOS token needed — autoregression guaranteed by output shift structure
+
+**Affine transform convention:**
+- Apple: z = (x_in - xb) * exp(-xa) → "subtract shift, multiply by exp(-log_scale)"
+- Our model: y = exp(log_scale) * x + shift → "multiply by exp(log_scale), add shift"
+- These are different conventions! I need to use OUR model's convention, not Apple's.
+- In our model: z = scale * x + shift, log_det += 3 * log_scale per real atom
+- The forward-inverse consistency test will catch any convention mismatch.
+
+**pos_embed sizing for output-shift:**
+- SOS path: pos_embed has max_atoms+1 entries (for SOS at 0, atoms at 1..N)
+- Output-shift path: pos_embed needs only max_atoms entries (for atoms at 0..N-1)
+- Solution: add a separate `pos_embed_os` (output-shift) Embedding with max_atoms entries
+- Only instantiated when use_output_shift=True AND use_pos_enc=True
+- Since spec has use_pos_enc=False, this is a no-op for hyp_006 runs
+
+**Causal mask for output-shift:**
+- Self-inclusive: token i attends to 0..i (lower triangular including diagonal)
+- This is: causal_mask_bool = torch.tril(torch.ones(N, N, dtype=torch.bool))
+- After output shift, params[:,i,:] = transformer_output[:,i-1,:]
+  - So params for token i come from output at i-1, which only saw tokens 0..i-1
+  - Correct Jacobian: lower triangular (no self-loops via params)
+
+**Diagnostic criterion:**
+- If log_det/dof < 5.0 at step 500 (alpha_pos=10.0, no reg) → hypothesis CONFIRMED
+- In SOS model: log_det/dof grows to ~7-10 with exploitation
+- If output-shift eliminates exploitation pathway: log_det/dof should stay bounded
+
+### New Files Created
+(will be filled as implementation proceeds)
+
+### Commits
+(will be filled as commits are made)
+
+### Notes
+Reading tarflow_apple.py lines 186-237 carefully:
+- proj_out.weight.data.fill_(0.0) — zero-init output projection weight (not bias)
+- attn_mask registered as lower triangular (self-inclusive): torch.tril(torch.ones(N,N))
+- Output shift: cat([zeros_like(x[:,:1]), x[:,:-1]], dim=1)
+
+**Pre-run (Diagnostic):**
+Running 500 steps, ethanol only, cuda:8, alpha_pos=10.0, log_det_reg_weight=0.0.
+THE CRITICAL TEST: log_det/dof at step 500.
+- If < 5.0: output-shift eliminates exploitation pathway → hypothesis CONFIRMED → proceed to SANITY
+- If > 5.0 early (step 100+): output-shift does NOT eliminate exploitation → FAILURE
+
+Config: all hyp_006 fixed settings (use_output_shift=True, use_bidir_types=True, use_pad_token=True, zero_padding_queries=True, alpha_pos=10.0, log_det_reg_weight=0.0, n_steps=500, batch_size=128, lr=1e-4, cosine, ethanol only)
