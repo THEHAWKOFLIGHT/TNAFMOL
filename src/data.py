@@ -1011,6 +1011,9 @@ class MD17Dataset(torch.utils.data.Dataset):
         noise_sigma: If > 0, add per-coordinate Gaussian noise N(0, sigma^2) to real
                      atoms only (hyp_005). Applied BEFORE SO(3) augmentation.
                      sigma=0.05 is the und_001 best practice from Phase 3/4.
+        max_atoms: If provided, truncate positions, atom_types, and mask to this length
+                   (hyp_007). Allows training with fewer padding slots than MAX_ATOMS=21.
+                   Must be >= n_real_atoms for the molecule. Default None = use MAX_ATOMS.
     """
 
     def __init__(
@@ -1022,6 +1025,7 @@ class MD17Dataset(torch.utils.data.Dataset):
         permute: bool = False,
         pad_token_idx: int = 0,
         noise_sigma: float = 0.0,
+        max_atoms: Optional[int] = None,
     ):
         assert split in ("train", "val", "test")
 
@@ -1029,46 +1033,58 @@ class MD17Dataset(torch.utils.data.Dataset):
         idx = data[f"{split}_idx"]
 
         positions = data["positions"][idx]  # (N, 21, 3) float32
+        raw_mask = data["mask"]             # (21,) float32
+
+        # Determine effective max_atoms (hyp_007)
+        n_real = int(raw_mask.sum())
+        effective_max_atoms = max_atoms if max_atoms is not None else MAX_ATOMS
+        assert effective_max_atoms >= n_real, (
+            f"max_atoms={effective_max_atoms} < n_real={n_real} for {os.path.basename(data_dir)}"
+        )
+
+        # Truncate to effective_max_atoms (removes excess padding slots)
+        positions = positions[:, :effective_max_atoms, :]  # (N, max_atoms, 3)
+        mask_np = raw_mask[:effective_max_atoms]           # (max_atoms,)
 
         # Apply global std normalization if provided
         # This puts positions in ~N(0, 1) scale per coordinate
         if global_std is not None and global_std > 0:
             positions = positions / global_std
 
-        self.positions = torch.from_numpy(positions)               # (N, 21, 3)
+        self.positions = torch.from_numpy(positions)               # (N, max_atoms, 3)
         self.energies = torch.from_numpy(data["energies"][idx])    # (N,)
-        self.mask = torch.from_numpy(data["mask"])                 # (21,)
+        self.mask = torch.from_numpy(mask_np)                      # (max_atoms,)
         self.molecule = os.path.basename(data_dir)
         self.augment = augment
         self.global_std = global_std
         self.permute = permute
         self.pad_token_idx = pad_token_idx
         self.noise_sigma = noise_sigma
+        self.effective_max_atoms = effective_max_atoms
 
         # Build atom_types with correct pad_token_idx for padding positions.
         # data["atom_types"] was originally encoded with pad_token_idx=0.
         # If pad_token_idx != 0, re-encode padding positions with the new index.
-        raw_atom_types = data["atom_types"]  # (21,) int64, encoding real atoms + 0-padded rest
-        n_real = int(self.mask.sum().item())
+        raw_atom_types = data["atom_types"][:effective_max_atoms]  # (max_atoms,) int64
         if pad_token_idx != 0:
             # Replace 0-padding with pad_token_idx for positions beyond n_real
             new_atom_types = raw_atom_types.copy()
             new_atom_types[n_real:] = pad_token_idx
-            self.atom_types = torch.from_numpy(new_atom_types)    # (21,) — shared, with PAD token
+            self.atom_types = torch.from_numpy(new_atom_types)    # (max_atoms,) — shared, with PAD token
         else:
-            self.atom_types = torch.from_numpy(raw_atom_types)    # (21,) — shared
+            self.atom_types = torch.from_numpy(raw_atom_types)    # (max_atoms,) — shared
 
-        self.atom_types_one_hot = torch.from_numpy(data["atom_types_one_hot"])  # (21, 4)
+        self.atom_types_one_hot = torch.from_numpy(data["atom_types_one_hot"][:effective_max_atoms])  # (max_atoms, 4)
 
     def __len__(self):
         return len(self.positions)
 
     def __getitem__(self, idx):
-        positions = self.positions[idx]  # (21, 3)
+        positions = self.positions[idx]  # (max_atoms, 3)
 
         # Clone atom_types for this sample (shared per-molecule tensor;
         # must clone before permutation to avoid corrupting other samples)
-        atom_types = self.atom_types.clone()  # (21,)
+        atom_types = self.atom_types.clone()  # (max_atoms,)
 
         # Apply permutation augmentation (hyp_004) — before noise and SO(3) augmentation
         # Note: global_std normalization is a scalar applied in __init__,
@@ -1086,11 +1102,11 @@ class MD17Dataset(torch.utils.data.Dataset):
             positions = augment_positions(positions, self.mask)
 
         return {
-            "positions": positions,                  # (21, 3)
+            "positions": positions,                  # (max_atoms, 3)
             "energy": self.energies[idx],            # scalar
-            "atom_types": atom_types,                # (21,) — may be permuted, with PAD token
-            "atom_types_one_hot": self.atom_types_one_hot,  # (21, 4) — NOT permuted (not used by model)
-            "mask": self.mask,                       # (21,)
+            "atom_types": atom_types,                # (max_atoms,) — may be permuted, with PAD token
+            "atom_types_one_hot": self.atom_types_one_hot,  # (max_atoms, 4) — NOT permuted (not used by model)
+            "mask": self.mask,                       # (max_atoms,)
         }
 
 
@@ -1108,6 +1124,7 @@ class MultiMoleculeDataset(torch.utils.data.Dataset):
         permute: if True, randomly permute atom ordering per sample (hyp_004)
         pad_token_idx: padding atom type index (hyp_005, default 0 for backward compat)
         noise_sigma: per-coord Gaussian noise std on real atoms (hyp_005, default 0.0 = off)
+        max_atoms: if provided, truncate all samples to this length (hyp_007, default None = MAX_ATOMS)
     """
 
     def __init__(
@@ -1120,6 +1137,7 @@ class MultiMoleculeDataset(torch.utils.data.Dataset):
         permute: bool = False,
         pad_token_idx: int = 0,
         noise_sigma: float = 0.0,
+        max_atoms: Optional[int] = None,
     ):
         if molecules is None:
             molecules = list(MOLECULES.keys())
@@ -1137,6 +1155,7 @@ class MultiMoleculeDataset(torch.utils.data.Dataset):
             ds = MD17Dataset(
                 data_dir, split, augment=augment, global_std=global_std,
                 permute=permute, pad_token_idx=pad_token_idx, noise_sigma=noise_sigma,
+                max_atoms=max_atoms,
             )
             self.datasets.append(ds)
             self.molecule_indices.extend([i] * len(ds))

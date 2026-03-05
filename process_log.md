@@ -1201,3 +1201,39 @@ problem.
 
 ### Commits (continued)
 - `363ae31` — [hyp_006] results: FAILURE — HEURISTICS+SCALE exhausted, best ethanol VF=24.8%
+
+---
+
+## 2026-03-05 — hyp_007: Padding Isolation + Multi-Molecule OPTIMIZE
+**Branch:** `exp/hyp_007`
+
+### Decisions & Reasoning
+
+**Phase 1 — Padding Isolation Gate:**
+- Goal: verify that output-shift makes padding neutral for ethanol (9 real atoms) at different max_atoms sizes
+- Design: add `max_atoms` config param; data pipeline truncates stored 21-atom tensors to `[:max_atoms]`
+- Key insight: truncation to max_atoms removes excess padding. E.g., max_atoms=12 gives 9 real + 3 pad for ethanol.
+- Model is constructed with `max_atoms` instead of hardcoded `MAX_ATOMS=21`; positional embedding table sized accordingly
+- `evaluate_molecule()` updated to accept `max_atoms` so samples match training tensor size
+- Phase 1 does NOT use `max_atoms` parameter for Phase 2 (Phase 2 uses MAX_ATOMS=21 for all 8 molecules)
+- Verification: quick 10-step smoke test to ensure shapes correct before any training
+
+**Phase 2 — Multi-molecule OPTIMIZE:**
+- Uses hyp_006 diagnostic directly (root cause: insufficient training budget — 5k steps = ~22% of one epoch)
+- SANITY angle: 20k steps, all 8 molecules, output-shift config. Promising criterion: ethanol VF > 40% AND mean VF > 30%
+- HEURISTICS sweep (if SANITY passes): lr x n_steps x batch_size sweep via Slurm --array
+- SCALE (conditional): d_model=256, n_blocks=12, 50k steps
+
+**Implementation plan:**
+- src/data.py: add `max_atoms` to MD17Dataset.__init__() and __getitem__(); pass through MultiMoleculeDataset
+- src/train.py: add `max_atoms` to DEFAULT_CONFIG; resolve in train(); pass to model, datasets, evaluate_molecule()
+- No changes to model.py needed: TarFlow already accepts `max_atoms` param; we just pass the right value
+
+### New Files Created
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/reports/diagnostic_report.md`
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/reports/plan_report.md`
+- (Phase 1 outputs) `experiments/hypothesis/hyp_007_padding_isolation_multimol/angles/phase1_padding/val/T{N}/`
+- (Phase 2 outputs) `experiments/hypothesis/hyp_007_padding_isolation_multimol/angles/{sanity,heuristics,scale}/`
+
+### Commits
+(to be filled as work progresses)

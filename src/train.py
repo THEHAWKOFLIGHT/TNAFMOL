@@ -113,6 +113,7 @@ DEFAULT_CONFIG = {
     # Data
     "data_root": "data/",
     "molecules": None,  # None = all 8
+    "max_atoms": None,  # None = use MAX_ATOMS (21); set to e.g. 9 for padding isolation test (hyp_007)
 
     # W&B
     "wandb_project": "tnafmol",
@@ -188,6 +189,7 @@ def evaluate_molecule(
     temperature: float = 1.0,
     global_std: Optional[float] = None,
     pad_token_idx: int = 0,
+    max_atoms: Optional[int] = None,
 ) -> Dict:
     """Evaluate the model on a single molecule.
 
@@ -200,17 +202,29 @@ def evaluate_molecule(
         global_std: if provided, multiply samples by this to denormalize
                     (model generates in normalized space, metrics need Angstroms)
         pad_token_idx: index used for padding atoms in atom_types (hyp_005 default 0)
+        max_atoms: if provided, truncate atom_types, mask, ref_positions to this length
+                   (hyp_007). Must match the max_atoms used during training.
 
     Returns:
         dict with valid_fraction, energy_wasserstein, pairwise_distance_divergence
     """
     data = np.load(os.path.join(data_dir, "dataset.npz"))
-    ref_stats = torch.load(os.path.join(data_dir, "ref_stats.pt"), weights_only=False)
 
     # Get molecule info — apply correct pad_token_idx to padding positions
     raw_atom_types = data["atom_types"]  # (21,) int64
     mask_np = data["mask"]               # (21,) float32
     n_real = int(mask_np.sum())
+
+    # Resolve effective max_atoms for evaluation (hyp_007)
+    effective_max_atoms = max_atoms if max_atoms is not None else MAX_ATOMS
+    assert effective_max_atoms >= n_real, (
+        f"max_atoms={effective_max_atoms} < n_real={n_real} for {os.path.basename(data_dir)}"
+    )
+
+    # Truncate to effective_max_atoms
+    raw_atom_types = raw_atom_types[:effective_max_atoms]
+    mask_np = mask_np[:effective_max_atoms]
+
     if pad_token_idx != 0:
         atom_types_eval = raw_atom_types.copy()
         atom_types_eval[n_real:] = pad_token_idx
@@ -219,13 +233,12 @@ def evaluate_molecule(
     atom_types = torch.from_numpy(atom_types_eval).to(device)
     mask = torch.from_numpy(mask_np).to(device)
     test_idx = data["test_idx"]
-    ref_positions = data["positions"][test_idx]  # (N_test, 21, 3) — raw Angstroms
-    ref_energies = data["energies"][test_idx]
+    ref_positions = data["positions"][test_idx][:, :effective_max_atoms, :]  # (N_test, max_atoms, 3) — raw Angstroms
 
     # Generate samples — model generates in normalized space if global_std was used
     model.eval()
     samples = model.sample(atom_types, mask, n_samples=n_samples, temperature=temperature)
-    samples_np = samples.cpu().numpy()  # (n_samples, 21, 3)
+    samples_np = samples.cpu().numpy()  # (n_samples, max_atoms, 3)
 
     # Denormalize: model generates in normalized space, metrics need raw Angstroms
     if global_std is not None and global_std > 0:
@@ -288,6 +301,11 @@ def train(cfg: dict):
         cfg["global_std"] = global_std
         print(f"Global std for normalization: {global_std:.4f} Angstroms")
 
+    # Resolve max_atoms (hyp_007): None = use MAX_ATOMS (21), otherwise truncate to specified size
+    max_atoms = cfg.get("max_atoms") or MAX_ATOMS
+    cfg["max_atoms_resolved"] = max_atoms
+    print(f"max_atoms: {max_atoms} (MAX_ATOMS={MAX_ATOMS})")
+
     # W&B: if a run is already active (called from sweep agent), reuse it
     # Otherwise, init a new run.
     if wandb.run is None:
@@ -334,7 +352,7 @@ def train(cfg: dict):
         atom_type_emb_dim=cfg["atom_type_emb_dim"],
         n_atom_types=n_atom_types,
         dropout=cfg["dropout"],
-        max_atoms=MAX_ATOMS,
+        max_atoms=max_atoms,  # hyp_007: use resolved max_atoms (not hardcoded MAX_ATOMS)
         alpha_pos=cfg.get("alpha_pos", 0.02),
         alpha_neg=cfg.get("alpha_neg", 2.0),
         shift_only=cfg.get("shift_only", False),
@@ -368,6 +386,7 @@ def train(cfg: dict):
         permute=use_perm_aug,
         pad_token_idx=pad_token_idx,
         noise_sigma=noise_sigma,
+        max_atoms=max_atoms,  # hyp_007: pass resolved max_atoms
     )
     val_ds = MultiMoleculeDataset(
         data_root, split="val", molecules=molecules,
@@ -375,6 +394,7 @@ def train(cfg: dict):
         permute=False,  # no permutation for validation
         pad_token_idx=pad_token_idx,
         noise_sigma=0.0,  # no noise for validation (evaluate clean data)
+        max_atoms=max_atoms,  # hyp_007: pass resolved max_atoms
     )
 
     print(f"Train size: {len(train_ds):,}, Val size: {len(val_ds):,}")
@@ -585,6 +605,7 @@ def train(cfg: dict):
                 device=device,
                 global_std=global_std,
                 pad_token_idx=pad_token_idx,
+                max_atoms=max_atoms,  # hyp_007: match training tensor size
             )
         mol_results[mol] = result
 
