@@ -1354,5 +1354,4 @@ in model.py (correct, no negative effect). Escalate to Postdoc with updated diag
 ### Commits
 - `8df4716` — [hyp_008] code: add per_dim_scale to model and train
 - `fdd49a1` — [hyp_008] config: pre-run snapshot for phase1_ethanol
-(pending) — [hyp_008] results: Phase 1 investigation FAILED — VF=39.2% best, re-diagnosis
-(pending) — [hyp_008] docs: final report
+- `3717c8b` — [hyp_008] results: Phase 1 investigation FAILED — best VF 39.2%, re-diagnosis
