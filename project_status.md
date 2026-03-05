@@ -78,3 +78,14 @@ Append-only log. One entry per experiment.
 **Failure modes:** None (experiment-level). VF plateau (13-25%) across all configs — root cause is atom overlap in generated samples, not log-det exploitation.
 **Story fit:** FITS — the architectural hypothesis is confirmed (output-shift eliminates exploitation). VF gap points to normalization/training dynamics issue, not architecture.
 **Concerns:** VF plateau despite bounded log_det. SCALE model overfits. Best checkpoint always at step 1000 regardless of total budget.
+
+---
+
+### hyp_007 — Padding Isolation + Multi-Molecule OPTIMIZE
+**Date:** 2026-03-06 | **Status:** PARTIAL
+**Tag:** `hyp_007` | **Merge commit:** `c3cbc1a`
+**Result:** Phase 1 (padding isolation) CONFIRMED: output-shift makes padding neutral (4pp max VF variation across T=9,12,15,18,21). Phase 2: log-det regularization (ldr=5.0) is critical — pushes ethanol from 17.6% → 55.8%. Best multi-molecule result: ethanol 55.8%, malonaldehyde 53.2%, mean 34.7%. 2/8 molecules above 50% (target: 4/8).
+**PhD quality:** CLEAN — single PhD agent, no send-backs. 7 verification tests passed. All training runs completed. HEURISTICS sweep adapted from planned lr/steps/bs sweep to ldr/lr/steps sweep based on SANITY evidence — reasonable adaptation.
+**Failure modes:** None (experiment-level). PARTIAL status reflects not meeting primary criterion (4/8 >= 50%), though significant progress made (2.25x improvement over hyp_006).
+**Story fit:** FITS — confirms output-shift + ldr=5.0 is the correct platform. Padding neutrality confirmed. VF gap now correlates with molecule size, not architecture.
+**Concerns:** Aspirin at 9.2% is a major outlier. SCALE angle was skipped — could potentially push more molecules above 50%. Best checkpoint at step 12000/20000 — cosine LR may over-decay.
