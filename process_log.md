@@ -1310,6 +1310,49 @@ SCALE skipped — both criteria met.
 - `experiments/hypothesis/hyp_008_per_dim_scale/reports/plan_report.md`
 - `experiments/hypothesis/hyp_008_per_dim_scale/reports/final_report.md`
 
+### Phase 1 Investigation Results (2026-03-05)
+
+INTENTION (write-before-execute): Run 4 Phase 1 investigation configs on cuda:8. Expect VF>=90%.
+If <90%, investigate with n_blocks=8 and/or ldr=5.0 per plan_report.md.
+
+4 configs executed on cuda:8 (test GPU, direct python3):
+1. 4 blocks, ldr=0.0 → VF=27.2%, log_det/dof=1.4+ (exploded). W&B: mpx5bh9g
+2. 4 blocks, ldr=5.0 → VF=27.4%, log_det/dof=0.09 (stable). W&B: nn0weqoy
+3. 8 blocks, ldr=0.0 → VF=39.2% at step 500 then collapsed. W&B: pwdbuaf0
+4. 8 blocks, ldr=5.0 → VF=29.0%. W&B: sr581ia3
+
+Phase 1 gate (VF>=90%) NOT MET. Best: 39.2% (8 blocks, ldr=0, step 500).
+
+### Re-Diagnosis from und_001 (2026-03-05)
+
+After 4 failed Phase 1 runs, re-read und_001 Phase 4 ablation data:
+- Config 2 (tarflow_apple.py, T=9, noise, per-dim scale): 96.2% VF
+- Config 3 (tarflow_apple.py, T=9, noise, shared scale): 95.3% VF
+- Difference: <1pp — per_dim_scale does NOT explain the 61pp gap
+
+Original diagnostic hypothesis was WRONG. The true root cause is architectural:
+1. Post-norm (model.py) vs pre-norm (tarflow_apple.py) — §8b of source_comparison.md
+2. 1 attention layer/block (model.py) vs 2 layers/block (tarflow_apple.py) — §8a
+3. Clamping present in model.py (alpha_pos=10.0), none in tarflow_apple.py
+
+Evidence: adaptation ladder Step E (tarflow_apple.py, shared scale, T=21+noise) = 40.2% VF.
+Our best run (model.py, per_dim_scale=True, 8 blocks) = 39.2%. Near-identical — the
+per_dim_scale change in model.py is irrelevant because we still have the architectural gap.
+
+Decision: Write final_report.md as OPTIMIZE FAILURE. Keep per_dim_scale implementation
+in model.py (correct, no negative effect). Escalate to Postdoc with updated diagnosis.
+
+### New Files Created
+- `experiments/hypothesis/hyp_008_per_dim_scale/reports/diagnostic_report.md` — original (wrong) root cause
+- `experiments/hypothesis/hyp_008_per_dim_scale/reports/plan_report.md` — three-phase execution plan
+- `experiments/hypothesis/hyp_008_per_dim_scale/angles/sanity/val/config_phase1_ethanol.json`
+- `experiments/hypothesis/hyp_008_per_dim_scale/angles/sanity/val/config_phase1_ethanol_ldr5.json`
+- `experiments/hypothesis/hyp_008_per_dim_scale/angles/sanity/val/config_phase1_ethanol_8blocks.json`
+- `experiments/hypothesis/hyp_008_per_dim_scale/angles/sanity/val/config_phase1_ethanol_8blocks_ldr5.json`
+- `experiments/hypothesis/hyp_008_per_dim_scale/reports/final_report.md` — OPTIMIZE failure + re-diagnosis
+
 ### Commits
-(will fill as commits are made)
-- `b179e1e` — [hyp_007] results: HEURISTICS full run SUCCESS — ethanol VF=55.8%, mean VF=34.7%
+- `8df4716` — [hyp_008] code: add per_dim_scale to model and train
+- `fdd49a1` — [hyp_008] config: pre-run snapshot for phase1_ethanol
+(pending) — [hyp_008] results: Phase 1 investigation FAILED — VF=39.2% best, re-diagnosis
+(pending) — [hyp_008] docs: final report

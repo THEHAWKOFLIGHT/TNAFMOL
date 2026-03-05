@@ -412,3 +412,50 @@ Both criteria met. SCALE skipped.
 **Key finding:** ldr=5.0 (same as hyp_003 single-molecule) resolves multi-molecule log-det exploitation. Aspirin (21 atoms, 9.2% VF) is the main outlier — model capacity may be insufficient for the largest molecule in a shared-model multi-molecule setup.
 
 **W&B full run:** https://wandb.ai/kaityrusnelson1/tnafmol/runs/2r296jrf
+
+---
+
+## hyp_008 — Per-Dimension Scale + Architecture Alignment
+**Date:** 2026-03-05 | **Branch:** `exp/hyp_008` | **Status:** FAILURE (primary criterion not met)
+
+**Hypothesis:** The 61pp VF gap between model.py and tarflow_apple.py is caused primarily by
+shared log_scale (1 scalar per atom) vs per-dimension scale (3 independent scalars per atom).
+Fix: add `per_dim_scale=True` flag to TarFlowBlock/TarFlow to match Apple's architecture.
+
+**Implementation:** Added `per_dim_scale` parameter to `TarFlowBlock` (out_proj 4→6 dims,
+log_det sum over 3 dims per atom) and `TarFlow` (propagated to all blocks). Added to
+`DEFAULT_CONFIG` in train.py. Backward compatible (False by default). All 6 unit tests pass.
+
+**Phase 1 Investigation (single-molecule ethanol, T=9, no padding, cuda:8):**
+
+| Config | n_blocks | ldr | VF | log_det/dof | W&B |
+|--------|----------|-----|----|-------------|-----|
+| 4b, ldr=0 | 4 | 0.0 | 27.2% | 1.4+ (exploded) | mpx5bh9g |
+| 4b, ldr=5 | 4 | 5.0 | 27.4% | 0.09 (stable) | nn0weqoy |
+| 8b, ldr=0 | 8 | 0.0 | 39.2% (step 500) | collapsed | pwdbuaf0 |
+| 8b, ldr=5 | 8 | 5.0 | 29.0% | 0.09 (stable) | sr581ia3 |
+
+**Phase 1 gate: VF >= 90%. Best achieved: 39.2% (8 blocks, ldr=0, step 500) — collapsed thereafter. FAILED.**
+
+**Re-diagnosis from und_001:**
+und_001 Phase 4 already measured per-dim vs shared scale on tarflow_apple.py at T=9:
+- per-dim: 96.2% VF | shared: 95.3% VF — **<1pp difference**
+
+The original diagnostic hypothesis was wrong. Per_dim_scale is not the root cause of the
+61pp gap. The true architectural differences (model.py vs tarflow_apple.py) are:
+- Post-norm vs pre-norm (MEDIUM-HIGH impact per source_comparison.md §8b)
+- 1 layer/block vs 2 layers/block (MEDIUM-HIGH per §8a)
+
+Our model.py with per_dim_scale + 8 blocks reaches ~39% VF — almost exactly matching
+adaptation ladder Step E (tarflow_apple.py, shared scale, T=21+noise: 40.2% VF). The per_dim_scale
+change is absorbed by the remaining architectural gap.
+
+**Phases 2 and 3:** Skipped — Phase 1 never passed.
+
+**Code artifacts:** per_dim_scale implementation committed to src/model.py + src/train.py.
+These changes are correct and retained — they align model.py with Apple's scale parameterization
+even if they don't resolve the VF gap alone.
+
+**Story fit:** UPDATES STORY. The root cause is architectural (pre-norm, layers_per_block),
+not scale parameterization. Next experiment should implement pre-norm + layers_per_block in
+model.py and retest single-molecule VF.
