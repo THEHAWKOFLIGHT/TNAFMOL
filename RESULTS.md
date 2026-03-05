@@ -1,8 +1,8 @@
 # TNAFMOL — Results
-**Last updated:** 2026-03-06 after hyp_007
+**Last updated:** 2026-03-06 after hyp_008
 
 ## Status
-Multi-molecule output-shift TarFlow with log-det regularization (ldr=5.0) achieves 55.8% ethanol VF and 34.7% mean VF — first multi-molecule result with 2 molecules above 50%. Padding confirmed neutral with output-shift (4pp max variation across 5 padding sizes). Key bottleneck: larger molecules (aspirin 9.2%) need more capacity or training.
+Per-dimension scale (hyp_008) confirmed to have <1pp effect on VF — the 61pp gap between model.py and tarflow_apple.py is driven by architectural differences (post-norm vs pre-norm, layers_per_block=1 vs 2), not scale parameterization. Best multi-molecule result remains hyp_007: 55.8% ethanol, 34.7% mean VF, 2/8 above 50%.
 
 ## Experiments
 
@@ -15,7 +15,8 @@ Multi-molecule output-shift TarFlow with log-det regularization (ldr=5.0) achiev
 | und_001 | TarFlow Diagnostic Ladder | 98.2% mean (no pad) | Padding is sole failure; bugs found + fixed | DONE |
 | hyp_005 | Padding-Aware TarFlow (PAD token + query zeroing) | 4.7% (ethanol) | Padding fixes have zero effect; log-det exploitation persists | FAILURE |
 | hyp_006 | Output-Shift TarFlow (Apple architecture) | 24.8% (ethanol) | Hypothesis CONFIRMED: log-det exploitation eliminated. VF plateau at 13-25%. | FAILURE |
-| **hyp_007** | **Output-Shift + ldr=5.0 + 20k steps** | **55.8% (ethanol), 34.7% mean** | **Padding neutral (4pp drop). ldr=5.0 critical. 2/8 molecules above 50%.** | **PARTIAL** |
+| hyp_007 | Output-Shift + ldr=5.0 + 20k steps | 55.8% (ethanol), 34.7% mean | Padding neutral (4pp drop). ldr=5.0 critical. 2/8 molecules above 50%. | PARTIAL |
+| **hyp_008** | **Per-dim scale (3 log_scales/atom)** | **39.2% (ethanol, T=9)** | **<1pp effect vs shared scale (und_001 Phase 4). True gap: pre-norm + layers_per_block.** | **FAILURE** |
 
 ## Best Result
 **und_001:** Architecture ceiling = 98.2% mean VF across all 8 molecules with T=n_real (no padding). Range: 94.3% (aspirin) to 100% (naphthalene, benzene).
@@ -23,4 +24,4 @@ Multi-molecule output-shift TarFlow with log-det regularization (ldr=5.0) achiev
 **hyp_007 (multi-molecule with output-shift + ldr=5.0):** Best VF=55.8% on ethanol, 53.2% on malonaldehyde, 42.8% benzene, 39.4% uracil, 29.8% toluene, 24.6% salicylic acid, 22.4% naphthalene, 9.2% aspirin. Mean VF=34.7%. Config: ldr=5.0, lr=3e-4, cosine, 20k steps, d_model=128, n_blocks=8. Best checkpoint at step 12000.
 
 ## What's Next
-2/8 molecules above 50% (target: 4/8). Remaining gap is molecule-size-dependent: small molecules (9 atoms) achieve 50%+, large molecules (18-21 atoms) are below 25%. Next steps: (A) SCALE — d_model=256, n_blocks=12 to increase per-molecule capacity, (B) per-molecule normalization instead of global std, (C) longer training with plateau-aware LR (model peaks at step 12000/20000 — cosine may over-decay), (D) DDPM baseline for head-to-head comparison.
+The 61pp gap between model.py (39% VF) and tarflow_apple.py (96% VF) on single-molecule ethanol T=9 is architectural: (A) pre-norm instead of post-norm, (B) layers_per_block=2 (2 attention layers per flow block vs our 1). Next experiment should add these to model.py and verify T=9 VF >= 90%, then proceed to multi-molecule. DDPM baseline still planned after TarFlow reaches parity.

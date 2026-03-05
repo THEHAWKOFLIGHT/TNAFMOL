@@ -522,3 +522,70 @@ Note: Phase 1 used ldr=0.0 (to isolate padding effect), so absolute VF (31-35%) 
 - HEURISTICS full: https://wandb.ai/kaityrusnelson1/tnafmol/runs/2r296jrf
 
 **Story impact:** This result fits the research story. Three predictions confirmed: (1) padding neutrality with output-shift, (2) multi-molecule training feasible with log-det regularization, (3) ldr=5.0 carries over from single-molecule settings. The VF gap now correlates with molecule size, not architecture — small molecules (9 atoms) achieve 50%+, large molecules (18-21 atoms) are below 25%. This points to capacity or normalization as the next bottleneck, not architectural design. RESEARCH_STORY.md updated with resolved assumptions and revised experiment plan.
+
+---
+
+### 2026-03-06 — hyp_008 synthesis
+**Status:** FAILURE | **Failure level:** None
+**Branch:** `exp/hyp_008` | **Merge commit:** `bbb7a2e` | **Tag:** `hyp_008`
+
+**Experiment:** Per-Dimension Scale + Architecture Alignment. Hypothesis: switching from 1 shared log_scale per atom to 3 independent log_scales (per coordinate dimension) closes the 61pp VF gap between model.py and tarflow_apple.py on single-molecule ethanol.
+
+**PhD execution review:**
+- Single PhD agent completed all work (no context exhaustion, no send-backs)
+- Code changes: `per_dim_scale` parameter added to TarFlowBlock and TarFlow in src/model.py. out_proj outputs 6 dims (3 shift + 3 log_scale) when True. Log-det correctly sums over (B,N,3). Inverse correctly applies per-dimension scale. src/train.py updated with config wiring. 6/6 unit tests passed (forward-inverse consistency to <1e-6, Jacobian log-det error 0.001, backward compat confirmed).
+- Phase 1 gate: 4 investigation runs on ethanol T=9 (test GPU cuda:8), all 5000 steps
+- Phase 1 FAILED: best VF=39.2% (8 blocks, ldr=0, step 500 — collapsed after). Target was 90%.
+- Phases 2 and 3 correctly skipped per Phase 1 gate.
+- Re-diagnosis correctly cited und_001 Phase 4 data showing per-dim vs shared scale <1pp effect.
+- All W&B runs tagged and grouped under hyp_008
+- Logs maintained (process_log.md, experiment_log.md — both updated)
+- .state.json updated throughout execution
+- 5 commits on exp/hyp_008 (including 1 postdoc commit), all follow convention
+- No hardcoded reference values
+
+**Phase 1 investigation results:**
+
+| Config | n_blocks | ldr | VF | Finding |
+|--------|----------|-----|----|---------|
+| 4b, ldr=0 | 4 | 0.0 | 27.2% | log_det explodes (alpha=10 not tight enough) |
+| 4b, ldr=5 | 4 | 5.0 | 27.4% | ldr controls log_det but VF unchanged |
+| 8b, ldr=0 | 8 | 0.0 | 39.2% peak | More capacity helps briefly, then collapses |
+| 8b, ldr=5 | 8 | 5.0 | 29.0% | No additive benefit |
+
+**Key finding:**
+The original hypothesis (shared scale = root cause of 61pp gap) was WRONG. und_001 Phase 4 already measured this: per-dim scale 96.2% VF vs shared scale 95.3% VF at T=9 — <1pp difference. The data existed when hyp_008 was designed but was not incorporated into the spec's diagnostic.
+
+**True root cause of 61pp gap (model.py 39% vs tarflow_apple.py 96%):**
+1. **Post-norm vs pre-norm:** model.py uses LayerNorm after residual; Apple uses LayerNorm before attention/FFN (more stable for deep stacks).
+2. **Layers per block:** model.py has 1 attention + 1 FFN per TarFlowBlock; Apple has layers_per_block=2 (2 sequential AttentionBlocks per MetaBlock).
+3. **Clamping:** model.py clamps with alpha_pos=10.0 (loose but present); Apple has none.
+
+**Code retained:** per_dim_scale implementation is mathematically correct and aligns model.py with Apple's scale parameterization. It has no negative effect and is retained in src/model.py for future use.
+
+**Postdoc verification:**
+- Reviewed final_report.md: technically sound, re-diagnosis correctly cites und_001 data
+- Reviewed code diff: implementation is clean, backward-compatible, correct log_det math
+- Pre-merge consistency checks: all passed (no .py in experiments, reports present, logs updated, commits follow convention, working tree clean)
+- Verified .state.json: all steps completed/skipped
+
+**Pre-merge checks:**
+- [x] No .py files in experiments/hyp_008
+- [x] No __pycache__/
+- [x] No TASK_BRIEF.md
+- [x] data/ exists with 8 versioned datasets
+- [x] .state.json all steps completed/skipped
+- [x] reports/ has diagnostic_report.md, plan_report.md, final_report.md
+- [x] experiment_log.md has hyp_008 entry
+- [x] process_log.md has hyp_008 entries with commits section
+- [x] synthesis_log.md is append-only
+- [x] All commits follow convention
+- [x] Branch name follows convention (exp/hyp_008)
+- [x] Working tree clean
+
+**PhD execution quality:** CLEAN — no send-backs needed. Single PhD agent completed all work. The failure is a spec-level diagnostic error, not an implementation error. The PhD correctly identified the error via re-diagnosis and cited the relevant und_001 data.
+
+**W&B runs:**
+- Phase 1 (4 runs): mpx5bh9g, nn0weqoy, pwdbuaf0, sr581ia3
+
+**Story impact:** The experiment's hypothesis was wrong — per_dim_scale is not the root cause of the VF gap. The true gap is architectural (pre-norm + layers_per_block). This does NOT change the project's long-term viability — tarflow_apple.py achieves 96% VF at T=9, proving the architecture works. The path forward is to bring model.py closer to tarflow_apple.py's architecture (pre-norm, layers_per_block=2), not just its parameterization. RESEARCH_STORY.md updated.

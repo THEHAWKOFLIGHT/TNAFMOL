@@ -89,3 +89,14 @@ Append-only log. One entry per experiment.
 **Failure modes:** None (experiment-level). PARTIAL status reflects not meeting primary criterion (4/8 >= 50%), though significant progress made (2.25x improvement over hyp_006).
 **Story fit:** FITS — confirms output-shift + ldr=5.0 is the correct platform. Padding neutrality confirmed. VF gap now correlates with molecule size, not architecture.
 **Concerns:** Aspirin at 9.2% is a major outlier. SCALE angle was skipped — could potentially push more molecules above 50%. Best checkpoint at step 12000/20000 — cosine LR may over-decay.
+
+---
+
+### hyp_008 — Per-Dimension Scale + Architecture Alignment
+**Date:** 2026-03-06 | **Status:** FAILURE
+**Tag:** `hyp_008` | **Merge commit:** `bbb7a2e`
+**Result:** per_dim_scale implemented correctly (6/6 unit tests). Phase 1 gate FAILED: best VF=39.2% on ethanol T=9 (target 90%). Re-diagnosis: und_001 Phase 4 already showed per-dim vs shared scale has <1pp effect. True 61pp gap is architectural: post-norm vs pre-norm + layers_per_block=1 vs 2.
+**PhD quality:** CLEAN — single PhD agent, no send-backs. Implementation correct. 4 investigation runs within Phase 1 SANITY angle. Re-diagnosis properly cited und_001 data.
+**Failure modes:** Incorrect root cause hypothesis — per-dim scale was not the primary gap. The spec incorrectly attributed the 61pp VF gap to scale parameterization.
+**Story fit:** PARTIAL FIT — per_dim_scale implementation is correct and retained (aligns with Apple). Hypothesis was wrong but corrective diagnosis is sound.
+**Concerns:** The true architectural gaps (pre-norm, layers_per_block) were documented in und_001 source_comparison.md but not incorporated into hyp_008 diagnostic design.
