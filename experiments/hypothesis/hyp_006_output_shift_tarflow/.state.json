@@ -1,9 +1,9 @@
 {
   "exp_id": "hyp_006",
   "command": "OPTIMIZE",
-  "status": "in_progress",
+  "status": "completed",
   "created": "2026-03-04T00:00:00Z",
-  "last_updated": "2026-03-04T15:00:00Z",
+  "last_updated": "2026-03-04T16:00:00Z",
   "machine": {
     "host": "localhost",
     "user": "kai_nelson",
@@ -158,8 +158,9 @@
     },
     {
       "name": "merge_and_tag",
-      "status": "pending",
-      "acceptance": "Merged to main with tag hyp_006; pre-merge checks pass."
+      "status": "completed",
+      "acceptance": "Merged to main with tag hyp_006; pre-merge checks pass.",
+      "completed_at": "2026-03-04T16:00:00Z"
     }
   ]
 }
