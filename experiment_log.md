@@ -336,3 +336,40 @@ Finding: PAD token and query zeroing have ZERO effect on log-det exploitation. F
 
 **W&B sweep:** https://wandb.ai/kaityrusnelson1/tnafmol/sweeps/kzkja8zy
 **W&B val:** lwg95pjk (Config A SANITY), khw1bzkb (HEURISTICS val)
+
+## hyp_006 — Output-Shift TarFlow
+**Date:** 2026-03-04 | **Branch:** `exp/hyp_006` | **Status:** FAILURE (angle budget exhausted; primary criterion not met; hypothesis CONFIRMED)
+
+**Hypothesis:** Apple's output-shift mechanism (Zhai et al. 2024) eliminates the log-det exploitation pathway from hyp_005. By using output-shift + self-inclusive causal mask instead of SOS + strictly-causal mask, the model cannot exploit log-det even with alpha_pos=10.0 and no regularization.
+
+**Implementation:** Added `use_output_shift: bool = False` flag to TarFlowBlock and TarFlow. New `_run_transformer_output_shift()` method with self-inclusive causal mask. Output shift: `params = cat([zeros_like(params[:,:1]), params[:,:-1]], dim=1)`. Zero-init both weight and bias of out_proj. 7/7 unit tests pass. All src/ modifications — no experiment-level .py files.
+
+**Diagnostic (hypothesis test, 500 steps, ethanol, alpha_pos=10.0):**
+- log_det/dof at step 500: **0.516**
+- SOS model would reach 7+ at same step
+- **HYPOTHESIS CONFIRMED: output-shift eliminates exploitation pathway**
+
+**SANITY angle (1000 steps, all 8 molecules):**
+- Ethanol VF: 13.4% (criterion: >40%). Not met.
+- Mean VF: 13.8%. log_det/dof: 0.5-0.6 (stable, no exploitation)
+- alpha_pos=1.0 fallback: nearly identical (13.2%)
+- Assessment: PROMISING — model learning correctly, insufficient training budget
+
+**HEURISTICS angle (SBG recipe — Tan et al. 2025):**
+- Val (lr=1e-3 OneCycleLR, 3k): ethanol VF=15.0%, mean=13.2%
+- Sweep A (lr=3e-4 cosine, 5k): ethanol VF=17.0%, mean=16.3%
+- Sweep B (lr=5e-4 cosine, 5k): ethanol VF=19.8%, mean=15.1%
+- Sweep C (lr=1e-3 cosine, 5k): ethanol VF=24.8%, mean=16.3% **(best overall)**
+- VF plateau around 15-25% regardless of lr. Criterion not met.
+
+**SCALE angle (d_model=256, n_blocks=12, 9.6M params, 5k steps):**
+- Ethanol VF: 16.2%, mean=13.7%
+- Best val loss at step 1000 (1.1675), diverges after
+- Larger model overfits — does NOT help vs HEURISTICS
+- Promising criterion (>25% ethanol) NOT MET
+
+**Best result:** HEURISTICS C — ethanol VF=24.8%, mean VF=16.3%. Target: VF≥50% on ≥4/8 molecules. **FAILURE.**
+
+**Key finding:** Output-shift architecture is correct and stable. The VF plateau (~25% ceiling) is a remaining open problem — likely caused by overlap (mean min_dist 0.45-0.65 Å vs 0.8 Å threshold) and/or normalization mismatch across molecules.
+
+**W&B runs:** diagnostic=1yd68tmf, sanity=p6voeuas, sanity_alpha1=70775xvm, heur_val=6dn3s9fa, scale_val=paxf84nt

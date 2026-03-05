@@ -1108,3 +1108,93 @@ This was the key improvement in hyp_004 (5% → 44% VF).
 W&B sweep: lr {3e-4, 5e-4, 1e-3} × n_steps {3000, 5000} = 6 runs
 Promising criterion: VF > 0.40 on ethanol
 Literature citation: Tan et al. 2025, ICML (SBG paper) — OneCycleLR at lr=1e-3
+
+**Pre-run (HEURISTICS validation, lr=1e-3 OneCycleLR, 3000 steps):**
+Running a single validation run with the SBG recipe before launching sweep.
+If promising (VF > 0.40 ethanol), launch full sweep.
+
+**HEURISTICS val result (lr=1e-3 OneCycleLR, 3000 steps, all 8 molecules):**
+- VF on ethanol: 15.0%, mean VF: 13.2%
+- Best checkpoint at step 500 (early!) — val loss grew after that
+- Training loss much lower (0.33) but VF same as cosine (13%)
+- log_det/dof growing to ~1.1 with OneCycleLR (more aggressive than cosine at 0.6)
+- Promising criterion (VF > 0.40 ethanol): NOT MET at 3000 steps
+
+Diagnosis: The issue is that VF plateaus around 15% even as training loss drops significantly.
+This suggests VF is limited by mode capacity, not training budget.
+Hypothesis: min_dist_mean ~0.56 Å is the bottleneck — samples have too-close atom pairs.
+The model generates valid conformations at roughly constant rate regardless of training budget.
+
+Decision: Running longer with cosine to see if VF grows with steps. If cosine shows
+clear VF improvement trend with more steps, proceed to 5k/10k step full run.
+Pre-run: 5000 steps, cosine, lr=3e-4 (middle of sweep range) — check VF at multiple checkpoints.
+
+**HEURISTICS sweep A result (lr=3e-4, cosine, 5000 steps, all 8 molecules):**
+- VF on ethanol: 17.0%, mean VF: 16.3%
+- Benzene: 34.2% (best single-molecule VF so far)
+- Criterion NOT MET (<40% on ethanol)
+- Best val loss: 1.2689 at step 2000
+
+**HEURISTICS sweep B result (lr=5e-4, cosine, 5000 steps, all 8 molecules):**
+- VF on ethanol: 19.8%, mean VF: 15.1%
+- Criterion NOT MET
+- Best val loss: 1.2701 at step 1000
+
+**HEURISTICS sweep C result (lr=1e-3, cosine, 5000 steps, all 8 molecules):**
+- VF on ethanol: 24.8%, mean VF: 16.3%
+- Criterion NOT MET
+- Best val loss: 1.3805 at step 1000
+
+**HEURISTICS assessment:** All 4 sweep configs (OneCycleLR val + 3 cosine sweeps) failed to reach
+VF > 40% on ethanol. The pattern is clear: VF scales modestly with lr (17% → 25%) but plateaus
+well below 40%. Model capacity (d_model=128, n_blocks=8, ~1.2M params) is the bottleneck.
+This matches hyp_004 pattern where the same model size needed 20k steps to reach 44% on single
+molecules. For multi-molecule training, more capacity is needed.
+
+**Decision: Proceed to SCALE angle.**
+d_model=256, n_blocks=12, n_heads=8 → 9.6M parameters (8× capacity increase).
+Val run: 5000 steps, lr=5e-4 cosine (best single lr from HEURISTICS sweep), batch_size=64.
+Promising criterion: VF > 0.25 on ethanol at step 5k (above best HEURISTICS result of 24.8%).
+
+**Pre-run (SCALE val):**
+Running 5000 steps, d_model=256, n_blocks=12, n_heads=8, batch_size=64 (smaller due to model size).
+cuda:5 (free GPU with 48GB available).
+W&B run: https://wandb.ai/kaityrusnelson1/tnafmol/runs/paxf84nt
+
+**SCALE val result (d_model=256, n_blocks=12, 9.6M params, 5k steps, lr=5e-4 cosine):**
+- Ethanol VF: 16.2%, mean VF: 13.7%
+- Best val loss at step 1000: 1.1675 (then diverges — severe overfitting)
+- Larger model does NOT improve VF. Same or worse than HEURISTICS.
+- Promising criterion (VF > 0.25 on ethanol): NOT MET (16.2%)
+
+**SCALE assessment:** Overfitting is the dominant factor at 5k steps with SCALE. The larger model
+has higher capacity but the MD17 data distribution in normalized space is not rich enough to
+support 9.6M parameters at short training budgets. The val loss divergence after step 1000 is
+consistent across all models and suggests the normalization scheme creates a difficult generalization
+problem.
+
+**Decision: OPTIMIZE failure. All 3 angles exhausted.**
+- SANITY confirmed architecture correct (log_det/dof bounded)
+- HEURISTICS improved VF from 13% to 25% but ceiling is ~25%
+- SCALE confirmed capacity is not the bottleneck
+- Primary criterion (VF > 40% on ethanol) never met
+- Best result: ethanol VF=24.8% (HEURISTICS C, lr=1e-3 cosine, 5k steps)
+
+**Source integration assessment:**
+- All new code is in src/model.py and src/train.py (modifications, not new files)
+- No .py files were created in the experiment directory
+- Source integration is N/A — no new code to promote
+
+### New Files Created
+- `experiments/hypothesis/hyp_006_output_shift_tarflow/config/scale_val_config.json` — SCALE val config
+- `experiments/hypothesis/hyp_006_output_shift_tarflow/config/heuristics_sweep_b_config.json` — HEUR B config
+- `experiments/hypothesis/hyp_006_output_shift_tarflow/config/heuristics_sweep_c_config.json` — HEUR C config
+- `experiments/hypothesis/hyp_006_output_shift_tarflow/reports/final_report.md` — Final report (FAILURE)
+- `experiments/hypothesis/hyp_006_output_shift_tarflow/notes.md` — Experiment notes
+- `experiments/hypothesis/hyp_006_output_shift_tarflow/results/vf_per_molecule_all_angles.png` — VF comparison plot
+- `experiments/hypothesis/hyp_006_output_shift_tarflow/results/ethanol_mean_vf_comparison.png` — Ethanol/mean VF plot
+- `experiments/hypothesis/hyp_006_output_shift_tarflow/results/best_run_molecule_breakdown.png` — Best run breakdown
+- `experiments/hypothesis/hyp_006_output_shift_tarflow/results/logdet_dof_trajectory.png` — Log_det trajectory plot
+
+### Commits
+(to be filled after final commit)
