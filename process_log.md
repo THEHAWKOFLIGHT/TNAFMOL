@@ -1201,3 +1201,85 @@ problem.
 
 ### Commits (continued)
 - `363ae31` — [hyp_006] results: FAILURE — HEURISTICS+SCALE exhausted, best ethanol VF=24.8%
+
+---
+
+## 2026-03-05 — hyp_007: Padding Isolation + Multi-Molecule OPTIMIZE
+**Branch:** `exp/hyp_007`
+
+### Decisions & Reasoning
+
+**Phase 1 — Padding Isolation Gate:**
+- Goal: verify that output-shift makes padding neutral for ethanol (9 real atoms) at different max_atoms sizes
+- Design: add `max_atoms` config param; data pipeline truncates stored 21-atom tensors to `[:max_atoms]`
+- Key insight: truncation to max_atoms removes excess padding. E.g., max_atoms=12 gives 9 real + 3 pad for ethanol.
+- Model is constructed with `max_atoms` instead of hardcoded `MAX_ATOMS=21`; positional embedding table sized accordingly
+- `evaluate_molecule()` updated to accept `max_atoms` so samples match training tensor size
+- Phase 1 does NOT use `max_atoms` parameter for Phase 2 (Phase 2 uses MAX_ATOMS=21 for all 8 molecules)
+- Verification: quick 10-step smoke test to ensure shapes correct before any training
+
+**Phase 2 — Multi-molecule OPTIMIZE:**
+- Uses hyp_006 diagnostic directly (root cause: insufficient training budget — 5k steps = ~22% of one epoch)
+- SANITY angle: 20k steps, all 8 molecules, output-shift config. Promising criterion: ethanol VF > 40% AND mean VF > 30%
+- HEURISTICS sweep (if SANITY passes): lr x n_steps x batch_size sweep via Slurm --array
+- SCALE (conditional): d_model=256, n_blocks=12, 50k steps
+
+**Implementation plan:**
+- src/data.py: add `max_atoms` to MD17Dataset.__init__() and __getitem__(); pass through MultiMoleculeDataset
+- src/train.py: add `max_atoms` to DEFAULT_CONFIG; resolve in train(); pass to model, datasets, evaluate_molecule()
+- No changes to model.py needed: TarFlow already accepts `max_atoms` param; we just pass the right value
+
+### New Files Created
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/reports/diagnostic_report.md`
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/reports/plan_report.md`
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/reports/final_report.md`
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/verify_max_atoms.py` — 7-test verification of max_atoms implementation (all passed)
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/generate_plots.py` — visualization script for all 6 required figures
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/config/phase1_T9.json` through `phase1_T21.json` — Phase 1 configs
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/config/phase2_sanity_val.json` — SANITY config (20k steps, ldr=0)
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/config/phase2_sanity_lr3e4.json` — SANITY fallback (lr=3e-4)
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/config/heuristics_sweep_base.json` — HEURISTICS base config
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/config/sweep_runs/run_00.json` through `run_07.json` — 8 sweep configs
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/config/heuristics_full.json` — best config for full run
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/angles/phase1_padding/val/T{9,12,15,18,21}/` — Phase 1 run outputs
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/angles/sanity/val/` — SANITY lr=1e-3 run outputs
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/angles/sanity/val/lr3e-4/` — SANITY lr=3e-4 outputs
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/angles/heuristics/sweep/runs/` — 6 HEURISTICS sweep run outputs
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/angles/heuristics/full/` — HEURISTICS full run (best checkpoint)
+- `experiments/hypothesis/hyp_007_padding_isolation_multimol/results/*.png` — 6 visualization figures
+- `scripts/slurm_hyp007_heuristics_sweep.sh` — Slurm array script (conda activation fixed for non-interactive shells)
+
+### Phase 1 Results Summary (2026-03-05)
+Ethanol-only, 5000 steps, output-shift TarFlow. All 5 max_atoms sizes completed on cuda:8/cuda:9.
+- T=9: 34.8%, T=12: 35.2%, T=15: 33.0%, T=18: 31.2%, T=21: 34.8%. Max drop: 4.0pp. Gate PASSED.
+
+### Phase 2 SANITY Results (2026-03-05 → 2026-03-06)
+20k steps, all 8 molecules, ldr=0.0. Log-det exploitation: log_det/dof rose from 0.08 to 1.2+.
+- lr=1e-3: best at step 1000, ethanol VF=17.6%, mean VF=13.9%
+- lr=3e-4: same pattern, ethanol VF=12.2%, mean VF=11.1%
+Both FAILED. Root cause: ldr=0 allows log-det exploitation even with output-shift.
+
+### Phase 2 HEURISTICS Sweep Results (2026-03-06)
+Sweep: log_det_reg_weight ∈ {1.0, 5.0} x lr ∈ {1e-3, 3e-4} x n_steps ∈ {20k, 50k}. 6 runs completed.
+- ldr=5.0 is critical — all ldr=5.0 runs: ethanol VF 50-55.8%; ldr=1.0: 36-40%
+- Best: run_05 (ldr=5.0, lr=3e-4, 20k steps): ethanol VF=55.8%, mean VF=34.7%
+Executed directly on cuda:8/cuda:9 (Slurm cluster had NFS mount issues for local path).
+
+### Phase 2 HEURISTICS Full Run Results (2026-03-06)
+Config: ldr=5.0, lr=3e-4, 20k steps, all 8 molecules, freshly initialized model. PID=2334102 on cuda:8.
+- Best checkpoint: step 12000 (val_loss=1.1902)
+- Ethanol VF=55.8% > 40% [CRITERION MET]
+- Mean VF=34.7% > 30% [CRITERION MET]
+- Aspirin VF=9.2% — major outlier (largest molecule, 21 atoms)
+SCALE skipped — both criteria met.
+
+### Key Technical Finding
+- SANITY failure mode: log_det/dof rises 0.08 → 1.2+ when ldr=0 in multi-molecule training
+- HEURISTICS fix: ldr=5.0 (same value as hyp_003 single-molecule) keeps log_det/dof bounded ~0.09
+- W&B run: https://wandb.ai/kaityrusnelson1/tnafmol/runs/2r296jrf
+
+### Commits
+- `b82e77b` — [hyp_007] code: add max_atoms parameter to data pipeline and train loop
+- `2cfe17e` — [hyp_007] config: Phase 1 configs + Phase 2 SANITY configs + HEURISTICS sweep
+- `0c0500c` — [hyp_007] config: fix Slurm script conda activation for non-interactive shell
+- `b179e1e` — [hyp_007] results: HEURISTICS full run SUCCESS — ethanol VF=55.8%, mean VF=34.7%

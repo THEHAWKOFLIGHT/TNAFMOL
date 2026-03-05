@@ -1,0 +1,134 @@
+{
+  "exp_id": "hyp_007",
+  "command": "OPTIMIZE",
+  "status": "in_progress",
+  "created": "2026-03-05T20:00:00Z",
+  "last_updated": "2026-03-06T10:00:00Z",
+  "machine": {
+    "host": "localhost",
+    "user": "kai_nelson",
+    "gpu": "cuda:8,cuda:9",
+    "pid": null,
+    "claude_session_id": null
+  },
+  "artifacts": {
+    "dataset": "data/",
+    "checkpoints": [
+      "experiments/hypothesis/hyp_007_padding_isolation_multimol/angles/heuristics/full/best.pt"
+    ],
+    "raw_outputs": [
+      "experiments/hypothesis/hyp_007_padding_isolation_multimol/angles/phase1_padding/val/T9/raw/mol_results.pt",
+      "experiments/hypothesis/hyp_007_padding_isolation_multimol/angles/phase1_padding/val/T12/raw/mol_results.pt",
+      "experiments/hypothesis/hyp_007_padding_isolation_multimol/angles/phase1_padding/val/T15/raw/mol_results.pt",
+      "experiments/hypothesis/hyp_007_padding_isolation_multimol/angles/phase1_padding/val/T18/raw/mol_results.pt",
+      "experiments/hypothesis/hyp_007_padding_isolation_multimol/angles/phase1_padding/val/T21/raw/mol_results.pt",
+      "experiments/hypothesis/hyp_007_padding_isolation_multimol/angles/sanity/val/raw/mol_results.pt",
+      "experiments/hypothesis/hyp_007_padding_isolation_multimol/angles/heuristics/full/raw/mol_results.pt"
+    ]
+  },
+  "steps": [
+    {
+      "name": "code_changes",
+      "status": "completed",
+      "acceptance": "max_atoms config parameter added to train.py, model constructor, dataset classes. Truncation logic works for max_atoms < 21. evaluate_molecule uses max_atoms correctly.",
+      "completed_at": "2026-03-05T21:00:00Z"
+    },
+    {
+      "name": "verification",
+      "status": "completed",
+      "acceptance": "max_atoms=9 produces (B,9,3) tensors. max_atoms=12 produces (B,12,3). Forward-inverse consistency at each max_atoms. Model parameter count same regardless of max_atoms.",
+      "completed_at": "2026-03-05T21:30:00Z",
+      "result": {"all_tests": "PASS", "n_tests": 7}
+    },
+    {
+      "name": "phase1_extremes",
+      "status": "completed",
+      "acceptance": "T=9 and T=21 ethanol training runs complete (5000 steps each). VF computed for both.",
+      "completed_at": "2026-03-05T23:00:00Z",
+      "result": {"T9_vf": 0.348, "T21_vf": 0.348}
+    },
+    {
+      "name": "phase1_intermediates",
+      "status": "completed",
+      "acceptance": "T=12, T=15, T=18 ethanol training runs complete.",
+      "completed_at": "2026-03-05T23:30:00Z",
+      "result": {"T12_vf": 0.352, "T15_vf": 0.330, "T18_vf": 0.312}
+    },
+    {
+      "name": "phase1_gate",
+      "status": "completed",
+      "acceptance": "All 5 padding sizes achieve consistent VF. Drop < 20pp across all padding sizes. Phase 1 PASSED.",
+      "completed_at": "2026-03-05T23:30:00Z",
+      "result": {"gate": "PASSED", "max_drop_pp": 4.0, "note": "T=9 to T=18 drop 4.0pp, well within 20pp tolerance"}
+    },
+    {
+      "name": "diagnostic",
+      "status": "completed",
+      "acceptance": "Diagnostic report analyzing hyp_006 baseline multi-molecule performance with output-shift.",
+      "completed_at": "2026-03-05T21:00:00Z"
+    },
+    {
+      "name": "plan",
+      "status": "completed",
+      "acceptance": "Plan sub-report with SANITY/HEURISTICS/SCALE angles.",
+      "completed_at": "2026-03-05T21:00:00Z"
+    },
+    {
+      "name": "angle_sanity_val",
+      "status": "completed",
+      "acceptance": "20k step multi-molecule run complete. VF > 40% ethanol is criterion.",
+      "completed_at": "2026-03-06T02:00:00Z",
+      "result": {"ethanol_vf": 0.176, "mean_vf": 0.139, "verdict": "FAIL - log-det exploitation detected"}
+    },
+    {
+      "name": "angle_heuristics_sweep",
+      "status": "completed",
+      "acceptance": "Sweep over log_det_reg_weight x lr x n_steps complete. Best config selected.",
+      "completed_at": "2026-03-06T07:00:00Z",
+      "result": {
+        "n_runs": 6,
+        "best_config": "ldr=5.0, lr=3e-4, 20k steps",
+        "best_ethanol_vf": 0.558,
+        "best_mean_vf": 0.347
+      }
+    },
+    {
+      "name": "angle_heuristics_full",
+      "status": "completed",
+      "acceptance": "Full training run with best sweep config. Evaluate all 8 molecules. ethanol VF > 40% AND mean VF > 30%.",
+      "completed_at": "2026-03-06T09:30:00Z",
+      "result": {
+        "ethanol_vf": 0.558,
+        "mean_vf": 0.347,
+        "mols_above_50pct": 2,
+        "verdict": "SUCCESS - both criteria met",
+        "best_ckpt_step": 12000,
+        "best_val_loss": 1.1902
+      }
+    },
+    {
+      "name": "angle_scale_val",
+      "status": "skipped",
+      "reason": "HEURISTICS full run met both success criteria (ethanol VF=55.8% > 40%, mean VF=34.7% > 30%). SCALE not needed.",
+      "completed_at": "2026-03-06T09:30:00Z"
+    },
+    {
+      "name": "final_report",
+      "status": "completed",
+      "acceptance": "Final experiment report written with all results, plots, analysis.",
+      "completed_at": "2026-03-06T10:30:00Z"
+    },
+    {
+      "name": "source_integration",
+      "status": "completed",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice.",
+      "completed_at": "2026-03-06T11:00:00Z",
+      "result": {"removed": ["verify_max_atoms.py", "generate_plots.py"], "src_current": true}
+    },
+    {
+      "name": "merge_and_tag",
+      "status": "pending",
+      "acceptance": "Merged to main with tag hyp_007; pre-merge checks pass."
+    }
+  ]
+}
