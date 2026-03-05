@@ -1282,4 +1282,34 @@ SCALE skipped — both criteria met.
 - `b82e77b` — [hyp_007] code: add max_atoms parameter to data pipeline and train loop
 - `2cfe17e` — [hyp_007] config: Phase 1 configs + Phase 2 SANITY configs + HEURISTICS sweep
 - `0c0500c` — [hyp_007] config: fix Slurm script conda activation for non-interactive shell
+
+---
+
+## 2026-03-05 — hyp_008: Per-Dimension Scale + Architecture Alignment
+**Branch:** `exp/hyp_008`
+
+### Decisions & Reasoning
+- Root cause from hyp_007 Phase 1: shared scale (1 scalar per atom) vs per-dimension scale (3 scalars per atom) — 61pp VF gap between our model and Apple TarFlow
+- Per-dimension scale: out_proj outputs 6 values (3 shift + 3 log_scale) instead of 4
+- Log-det changes: sum over (B,N,3) log_scale tensor instead of 3.0 * scalar per atom — exact same total DOF count, just independent per dimension
+- Backward compat: per_dim_scale=False default, no change to existing behavior
+- SOS path: NOT modified for per_dim_scale (only output-shift path tested in hyp_008)
+- Architecture alignment: d_model=256, dropout=0.0, use_pos_enc=True, alpha=10.0 (loose clamping)
+- Three-phase execution: Phase 1 gate (ethanol, VF>=90%), Phase 2 padding (2 runs), Phase 3 multi-mol OPTIMIZE
+
+### Plan: Implementation Steps
+1. Add per_dim_scale parameter to TarFlowBlock.__init__ → out_dim = 3 if shift_only else (6 if per_dim_scale else 4)
+2. Update forward() output-shift path: extract log_scale as (B,N,3) when per_dim_scale=True; log_det = (log_scale * mask.unsqueeze(-1)).sum(dim=(-1,-2))
+3. Update inverse() output-shift path: extract log_scale_step as (B,3) instead of (B,1)
+4. Add per_dim_scale to TarFlow.__init__, propagate to all TarFlowBlock constructors
+5. Add "per_dim_scale": False to DEFAULT_CONFIG in train.py; propagate to TarFlow constructor
+6. Run unit tests: forward-inverse consistency, backward compat, log-det correctness, Jacobian
+
+### New Files to Create
+- `experiments/hypothesis/hyp_008_per_dim_scale/reports/diagnostic_report.md`
+- `experiments/hypothesis/hyp_008_per_dim_scale/reports/plan_report.md`
+- `experiments/hypothesis/hyp_008_per_dim_scale/reports/final_report.md`
+
+### Commits
+(will fill as commits are made)
 - `b179e1e` — [hyp_007] results: HEURISTICS full run SUCCESS — ethanol VF=55.8%, mean VF=34.7%

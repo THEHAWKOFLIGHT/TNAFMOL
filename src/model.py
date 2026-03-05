@@ -334,6 +334,10 @@ class TarFlowBlock(nn.Module):
             instead of SOS+strictly-causal-mask (hyp_006). No SOS token; transformer
             runs on N tokens with self-inclusive causal mask; params shifted by 1 position
             after out_proj. Token 0 gets zero params = identity transform.
+        per_dim_scale: if True, predict 3 independent log_scales per atom (one per coordinate
+            dimension) instead of 1 shared log_scale. Changes out_proj output from 4 to 6 dims
+            (3 shift + 3 log_scale). Only active when shift_only=False. Only implemented for
+            the output-shift path (hyp_008). Backward compat: False = original behavior.
         log_scale_max: DEPRECATED — kept for backward compat, ignored if alpha_pos/alpha_neg provided
     """
 
@@ -352,6 +356,7 @@ class TarFlowBlock(nn.Module):
         max_atoms: int = 21,
         zero_padding_queries: bool = False,
         use_output_shift: bool = False,
+        per_dim_scale: bool = False,
         log_scale_max: float = 0.5,  # DEPRECATED — ignored, kept for compat
     ):
         super().__init__()
@@ -364,6 +369,7 @@ class TarFlowBlock(nn.Module):
         self.use_pos_enc = use_pos_enc
         self.zero_padding_queries = zero_padding_queries
         self.use_output_shift = use_output_shift
+        self.per_dim_scale = per_dim_scale
 
         # Learnable SOS token (provides context for the first atom)
         # Only used when use_output_shift=False (SOS path).
@@ -402,8 +408,14 @@ class TarFlowBlock(nn.Module):
 
         # Output head:
         #   shift_only=True: d_model -> shift(3) — volume-preserving (no scale)
-        #   shift_only=False: d_model -> shift(3) + log_scale(1) per atom
-        out_dim = 3 if shift_only else 4
+        #   shift_only=False, per_dim_scale=False: d_model -> shift(3) + log_scale(1) per atom
+        #   shift_only=False, per_dim_scale=True: d_model -> shift(3) + log_scale(3) per atom (hyp_008)
+        if shift_only:
+            out_dim = 3
+        elif per_dim_scale:
+            out_dim = 6  # 3 shift + 3 per-dimension log_scale
+        else:
+            out_dim = 4  # 3 shift + 1 shared log_scale
         self.out_proj = nn.Linear(d_model, out_dim)
 
         # Initialize output projection near zero for stable start.
@@ -723,6 +735,20 @@ class TarFlowBlock(nn.Module):
             if self.shift_only:
                 y_ordered = pos_ordered + shift
                 log_det = torch.zeros(B, device=positions.device)
+            elif self.per_dim_scale:
+                # Per-dimension scale (hyp_008): 3 independent log_scales per atom
+                log_scale = params[..., 3:6]  # (B, N, 3) — one scale per coordinate
+
+                # Asymmetric soft clamp via arctan — applied independently per dimension
+                log_scale = _asymmetric_clamp(log_scale, self.alpha_pos, self.alpha_neg)
+
+                # Apply affine transform: y_i = exp(log_scale_i) * x_i + shift_i (element-wise)
+                scale = log_scale.exp()  # (B, N, 3)
+                y_ordered = scale * pos_ordered + shift  # (B, N, 3)
+
+                # Log-determinant: sum all 3 log_scales per real atom
+                # log_scale is (B, N, 3), mask_ordered is (B, N)
+                log_det = (log_scale * mask_ordered.unsqueeze(-1)).sum(dim=(-1, -2))  # (B,)
             else:
                 log_scale = params[..., 3:4]  # (B, N, 1) in ordered space
 
@@ -850,6 +876,12 @@ class TarFlowBlock(nn.Module):
 
                 if self.shift_only:
                     x_work[:, step, :] = y_work[:, step, :] - shift_step
+                elif self.per_dim_scale:
+                    # Per-dimension scale (hyp_008): 3 independent log_scales
+                    log_scale_step = params[:, step, 3:6]  # (B, 3) — per-dimension
+                    log_scale_step = _asymmetric_clamp(log_scale_step, self.alpha_pos, self.alpha_neg)
+                    scale_step = log_scale_step.exp()  # (B, 3)
+                    x_work[:, step, :] = (y_work[:, step, :] - shift_step) / scale_step
                 else:
                     log_scale_step = params[:, step, 3:4]  # (B, 1)
                     log_scale_step = _asymmetric_clamp(log_scale_step, self.alpha_pos, self.alpha_neg)
@@ -910,6 +942,8 @@ class TarFlow(nn.Module):
         use_pos_enc: if True, add learned positional encodings per block (hyp_004)
         zero_padding_queries: if True, zero padding atom queries before attention (hyp_005)
         use_output_shift: if True, use Apple's output-shift mechanism (hyp_006)
+        per_dim_scale: if True, predict 3 independent log_scales per atom (hyp_008). Propagated
+            to all TarFlowBlock instances. Only active for output-shift path + shift_only=False.
         log_scale_max: DEPRECATED — kept for backward compat, ignored
     """
 
@@ -931,6 +965,7 @@ class TarFlow(nn.Module):
         use_pos_enc: bool = False,
         zero_padding_queries: bool = False,
         use_output_shift: bool = False,
+        per_dim_scale: bool = False,
         log_scale_max: float = 0.5,  # DEPRECATED — kept for backward compat
     ):
         super().__init__()
@@ -946,6 +981,7 @@ class TarFlow(nn.Module):
         self.use_pos_enc = use_pos_enc
         self.zero_padding_queries = zero_padding_queries
         self.use_output_shift = use_output_shift
+        self.per_dim_scale = per_dim_scale
 
         # Atom type embedding (shared across all blocks)
         self.atom_type_emb = nn.Embedding(n_atom_types, atom_type_emb_dim)
@@ -981,6 +1017,7 @@ class TarFlow(nn.Module):
                 max_atoms=max_atoms,
                 zero_padding_queries=zero_padding_queries,
                 use_output_shift=use_output_shift,
+                per_dim_scale=per_dim_scale,
             )
             for i in range(n_blocks)
         ])
