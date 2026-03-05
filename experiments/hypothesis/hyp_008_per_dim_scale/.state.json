@@ -1,9 +1,9 @@
 {
   "exp_id": "hyp_008",
   "command": "OPTIMIZE",
-  "status": "in_progress",
+  "status": "completed",
   "created": "2026-03-05T22:00:00Z",
-  "last_updated": "2026-03-05T23:45:00Z",
+  "last_updated": "2026-03-06T00:15:00Z",
   "machine": {
     "host": "localhost",
     "user": "kai_nelson",
@@ -89,8 +89,15 @@
     },
     {
       "name": "merge_and_tag",
-      "status": "pending",
-      "acceptance": "Merged to main with tag hyp_008; pre-merge checks pass"
+      "status": "completed",
+      "acceptance": "Merged to main with tag hyp_008; pre-merge checks pass",
+      "completed_at": "2026-03-06T00:15:00Z",
+      "result": {
+        "merge_commit": "bbb7a2e",
+        "tag": "hyp_008",
+        "doc_commit": "d754319",
+        "pushed": true
+      }
     }
   ]
 }
