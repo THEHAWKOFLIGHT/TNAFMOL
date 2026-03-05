@@ -1,0 +1,66 @@
+{
+  "exp_id": "hyp_008",
+  "command": "OPTIMIZE",
+  "status": "in_progress",
+  "created": "2026-03-05T22:00:00Z",
+  "last_updated": "2026-03-05T22:00:00Z",
+  "machine": {
+    "host": "localhost",
+    "user": "kai_nelson",
+    "gpu": "cuda:8",
+    "pid": null,
+    "claude_session_id": null
+  },
+  "artifacts": {
+    "dataset": "data/",
+    "checkpoints": [],
+    "raw_outputs": []
+  },
+  "steps": [
+    {
+      "name": "implementation",
+      "status": "pending",
+      "acceptance": "per_dim_scale added to model.py and train.py; all unit tests pass (forward-inverse consistency, log-det correctness, backward compat, Jacobian triangularity)"
+    },
+    {
+      "name": "phase1_validation",
+      "status": "pending",
+      "acceptance": "Single-molecule ethanol (T=9, no padding) achieves VF >= 90% with per_dim_scale=True"
+    },
+    {
+      "name": "phase2_padding",
+      "status": "pending",
+      "acceptance": "Ethanol at T=9 and T=21 both >= 85%, |VF(T=9) - VF(T=21)| < 10pp"
+    },
+    {
+      "name": "phase3_sanity",
+      "status": "pending",
+      "acceptance": "Multi-molecule (all 8, T=21) VF > 50% on ethanol AND mean VF > 40%"
+    },
+    {
+      "name": "phase3_heuristics",
+      "status": "pending",
+      "acceptance": "VF >= 50% on >= 4/8 molecules after sweep + full run"
+    },
+    {
+      "name": "phase3_scale",
+      "status": "pending",
+      "acceptance": "VF >= 50% on >= 4/8 molecules with larger model"
+    },
+    {
+      "name": "final_report",
+      "status": "pending",
+      "acceptance": "Final report written to reports/final_report.md with all results"
+    },
+    {
+      "name": "source_integration",
+      "status": "pending",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice"
+    },
+    {
+      "name": "merge_and_tag",
+      "status": "pending",
+      "acceptance": "Merged to main with tag hyp_008; pre-merge checks pass"
+    }
+  ]
+}
