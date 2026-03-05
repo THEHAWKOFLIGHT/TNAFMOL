@@ -1282,4 +1282,4 @@ SCALE skipped — both criteria met.
 - `b82e77b` — [hyp_007] code: add max_atoms parameter to data pipeline and train loop
 - `2cfe17e` — [hyp_007] config: Phase 1 configs + Phase 2 SANITY configs + HEURISTICS sweep
 - `0c0500c` — [hyp_007] config: fix Slurm script conda activation for non-interactive shell
-(results and final report commit pending)
+- `b179e1e` — [hyp_007] results: HEURISTICS full run SUCCESS — ethanol VF=55.8%, mean VF=34.7%
