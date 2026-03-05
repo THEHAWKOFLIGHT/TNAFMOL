@@ -61,6 +61,21 @@ hyp_005 changes:
   When enabled, zeroes the d_model-projected query of all padding atoms before attention.
   This prevents padding from corrupting LayerNorm statistics and gradient flow — one of
   the two padding corruption channels identified in und_001.
+
+hyp_006 changes:
+- use_output_shift: TarFlowBlock and TarFlow accept use_output_shift=True flag.
+  When enabled, replaces the SOS+strictly-causal-mask mechanism with Apple's output-shift
+  mechanism (Salimans & Ho 2021, as implemented in Apple TarFlow):
+    * No SOS token — transformer runs on N tokens directly
+    * Self-inclusive causal mask: token i attends to 0..i (lower triangular with diagonal)
+    * Output shift: after proj_out, shift output by one position:
+        params = cat([zeros_like(params[:,:1,:]), params[:,:-1,:]], dim=1)
+      This means params for token i come from transformer output at position i-1.
+      Token 0 gets zero params → identity transform. HARD autoregressive guarantee.
+    * out_proj zero-initialized for stable start
+  Hypothesis: the SOS+strictly-causal mechanism creates an exploitation pathway not
+  present in output-shift architecture. Output-shift eliminates this pathway, enabling
+  multi-molecule training without log-det explosion.
 """
 
 import math
@@ -315,6 +330,10 @@ class TarFlowBlock(nn.Module):
         zero_padding_queries: if True, zero the d_model query of padding atoms before
             attention (hyp_005). Prevents padding from corrupting LayerNorm statistics
             and gradient flow. Applied after input_proj + pos_enc, before attention.
+        use_output_shift: if True, use Apple's output-shift autoregressive mechanism
+            instead of SOS+strictly-causal-mask (hyp_006). No SOS token; transformer
+            runs on N tokens with self-inclusive causal mask; params shifted by 1 position
+            after out_proj. Token 0 gets zero params = identity transform.
         log_scale_max: DEPRECATED — kept for backward compat, ignored if alpha_pos/alpha_neg provided
     """
 
@@ -332,6 +351,7 @@ class TarFlowBlock(nn.Module):
         use_pos_enc: bool = False,
         max_atoms: int = 21,
         zero_padding_queries: bool = False,
+        use_output_shift: bool = False,
         log_scale_max: float = 0.5,  # DEPRECATED — ignored, kept for compat
     ):
         super().__init__()
@@ -343,19 +363,22 @@ class TarFlowBlock(nn.Module):
         self.shift_only = shift_only
         self.use_pos_enc = use_pos_enc
         self.zero_padding_queries = zero_padding_queries
+        self.use_output_shift = use_output_shift
 
         # Learnable SOS token (provides context for the first atom)
-        self.sos = nn.Parameter(torch.randn(1, 1, d_model) * 0.01)
+        # Only used when use_output_shift=False (SOS path).
+        if not use_output_shift:
+            self.sos = nn.Parameter(torch.randn(1, 1, d_model) * 0.01)
 
         # Input projection: in_features -> d_model
         self.input_proj = nn.Linear(in_features, d_model)
 
         # Positional encodings (hyp_004): learned embedding per sequence position
-        # max_atoms + 1 for the SOS token at position 0
-        # Each block has independent positional embeddings (may learn different
-        # position-dependent patterns at different flow depths).
+        # SOS path: max_atoms + 1 entries (SOS at position 0, atoms at 1..N)
+        # Output-shift path: max_atoms entries only (atoms at 0..N-1, no SOS)
         if use_pos_enc:
-            self.pos_embed = nn.Embedding(max_atoms + 1, d_model)
+            pos_enc_size = max_atoms if use_output_shift else max_atoms + 1
+            self.pos_embed = nn.Embedding(pos_enc_size, d_model)
 
         # Multi-head attention
         self.attn = nn.MultiheadAttention(
@@ -383,7 +406,9 @@ class TarFlowBlock(nn.Module):
         out_dim = 3 if shift_only else 4
         self.out_proj = nn.Linear(d_model, out_dim)
 
-        # Initialize output projection near zero for stable start
+        # Initialize output projection near zero for stable start.
+        # For use_output_shift=True: zero-initialize weights (Apple's convention — bias stays zero).
+        # For use_output_shift=False: zero-initialize both weights and bias (existing behavior).
         nn.init.zeros_(self.out_proj.weight)
         nn.init.zeros_(self.out_proj.bias)
 
@@ -552,6 +577,93 @@ class TarFlowBlock(nn.Module):
         atom_out = h[:, 1:, :]  # (B, N, d_model)
         return atom_out
 
+    def _run_transformer_output_shift(
+        self,
+        positions: torch.Tensor,
+        atom_type_emb: torch.Tensor,
+        atom_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Run transformer WITHOUT SOS, using self-inclusive causal mask (hyp_006).
+
+        Autoregressive correctness is enforced by the output shift AFTER this method
+        returns, not by the causal mask. The self-inclusive mask (token i attends to 0..i)
+        is correct here because the output shift will discard the i-th output for atom i's
+        parameters — instead using output i-1 (which only saw tokens 0..i-1).
+
+        Causal mask structure (N x N, self-inclusive lower triangular):
+            Token 0: attends to [0]           → params come from output[-1]=zeros → identity
+            Token 1: attends to [0, 1]         → params come from output[0] → conditioned on x_0
+            Token i: attends to [0..i]         → params come from output[i-1] → conditioned on x_{<i}
+
+        Key differences from _run_transformer():
+          - No SOS token: input shape is (B, N, d_model) not (B, N+1, d_model)
+          - Self-inclusive causal mask: torch.tril(ones(N, N)) instead of strictly causal
+          - Padding key mask: same logic (mask padding atoms as keys), but over N positions
+          - zero_padding_queries: applied to all N atom positions (no SOS to protect)
+          - pos_embed: N entries (not N+1)
+
+        Sanity checks:
+          - Token 0 attends to itself only — its output feeds params for token 1. CHECK.
+          - After output shift, params[:,0,:] = zeros (cat of zeros_like). CHECK.
+          - After output shift, params[:,i,:] = transformer_output[:,i-1,:]. CHECK.
+          - Params for token i come from output at i-1 → conditioned on x_{0..i-1}. CHECK.
+          - dy_i/dx_j = 0 for j > i — lower-triangular Jacobian preserved. CHECK.
+
+        Args:
+            positions: (B, N, 3) in causal ordering (already flipped for reverse blocks)
+            atom_type_emb: (B, N, emb_dim) in causal ordering
+            atom_mask: (B, N) in causal ordering
+
+        Returns:
+            atom_out: (B, N, d_model) — transformer output per atom (before output shift)
+        """
+        B, N, _ = positions.shape
+        device = positions.device
+
+        # Project input directly (no SOS prepended)
+        features = torch.cat([positions, atom_type_emb], dim=-1)  # (B, N, 3+emb_dim)
+        h = self.input_proj(features)  # (B, N, d_model)
+
+        # Positional encodings (only if enabled): N entries, no SOS
+        if self.use_pos_enc:
+            pos_indices = torch.arange(N, device=device)  # 0..N-1
+            h = h + self.pos_embed(pos_indices)  # broadcast: (B, N, d_model)
+
+        # Zero padding queries (hyp_005 + hyp_006 compatible): zero all padding atom activations
+        # No SOS to protect here — apply directly to all N positions
+        if self.zero_padding_queries:
+            h = h * atom_mask.float().unsqueeze(-1)  # (B, N, d_model)
+
+        # Self-INCLUSIVE causal mask: token i attends to 0..i (lower triangular with diagonal)
+        # This is correct because output shift will use output[i-1] for params[i],
+        # so position i's self-attention output (which sees x_0..x_i) is used for params[i+1].
+        causal_mask_bool = torch.tril(torch.ones(N, N, dtype=torch.bool, device=device))
+        causal_bias = torch.zeros(N, N, device=device)
+        causal_bias[~causal_mask_bool] = float("-inf")  # mask upper triangle
+
+        # Padding key mask: True where position should be ignored as key (B, N) bool
+        atom_kpm = (atom_mask < 0.5)  # (B, N) True=padding
+
+        # Combine causal bias and padding key mask into single float additive mask
+        # combined: (B, N, N) — additive bias per batch element
+        combined_mask = causal_bias.unsqueeze(0).expand(B, -1, -1).clone()  # (B, N, N)
+        padding_cols = atom_kpm.unsqueeze(1).float() * -1e9  # (B, 1, N)
+        combined_mask = combined_mask + padding_cols  # broadcast: (B, N, N)
+
+        # Expand for all heads: (B*n_heads, N, N)
+        combined_mask = combined_mask.unsqueeze(1).expand(
+            -1, self.n_heads, -1, -1
+        ).reshape(B * self.n_heads, N, N)
+
+        # Self-attention
+        h_attn, _ = self.attn(h, h, h, attn_mask=combined_mask)
+        h = self.attn_norm(h + self.attn_dropout(h_attn))
+
+        # FFN
+        h = self.ffn_norm(h + self.ffn(h))
+
+        return h  # (B, N, d_model) — output shift applied in forward()
+
     def forward(
         self,
         positions: torch.Tensor,
@@ -559,6 +671,12 @@ class TarFlowBlock(nn.Module):
         atom_mask: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Forward pass: transform positions and compute log-det.
+
+        Two code paths controlled by self.use_output_shift:
+          - SOS path (use_output_shift=False): existing mechanism — SOS token prepended,
+            strictly causal mask, transformer output used directly as params.
+          - Output-shift path (use_output_shift=True): Apple's mechanism — no SOS,
+            self-inclusive causal mask, params shifted by 1 position after out_proj.
 
         Args:
             positions: (batch, max_atoms, 3) input positions
@@ -573,7 +691,6 @@ class TarFlowBlock(nn.Module):
 
         if self.reverse:
             # Flip atom ordering for reverse autoregressive direction
-            # Flip along atom dimension
             pos_ordered = positions.flip(1)
             emb_ordered = atom_type_emb.flip(1)
             mask_ordered = atom_mask.flip(1)
@@ -582,38 +699,88 @@ class TarFlowBlock(nn.Module):
             emb_ordered = atom_type_emb
             mask_ordered = atom_mask
 
-        # Run transformer to get per-atom context
-        atom_out = self._run_transformer(pos_ordered, emb_ordered, mask_ordered)  # (B, N, d_model)
+        if self.use_output_shift:
+            # --- Output-shift path (hyp_006) ---
+            # Run transformer with self-inclusive causal mask on N tokens (no SOS)
+            atom_out = self._run_transformer_output_shift(
+                pos_ordered, emb_ordered, mask_ordered
+            )  # (B, N, d_model) in ordered space
 
-        if self.reverse:
-            # Flip back to original ordering
-            atom_out = atom_out.flip(1)
+            # Predict affine params in ordered space
+            params = self.out_proj(atom_out)  # (B, N, 3 or 4)
 
-        # Predict affine params from context
-        params = self.out_proj(atom_out)   # (B, N, 3 or 4)
-        shift = params[..., :3]            # (B, N, 3)
+            # OUTPUT SHIFT: shift params by one position.
+            # params[:,i,:] becomes transformer_output[:,i-1,:] (conditioned on x_{0..i-1})
+            # params[:,0,:] = zeros (identity transform for token 0).
+            # This is the HARD autoregressive guarantee — correct regardless of attention mask.
+            params = torch.cat([
+                torch.zeros_like(params[:, :1, :]),  # (B, 1, out_dim) — zeros for token 0
+                params[:, :-1, :],                    # (B, N-1, out_dim) — shifted params
+            ], dim=1)  # (B, N, out_dim)
 
-        if self.shift_only:
-            # Volume-preserving: y_i = x_i + shift_i, log_det = 0
-            y = positions + shift
-            log_det = torch.zeros(positions.shape[0], device=positions.device)
+            shift = params[..., :3]  # (B, N, 3) in ordered space
+
+            if self.shift_only:
+                y_ordered = pos_ordered + shift
+                log_det = torch.zeros(B, device=positions.device)
+            else:
+                log_scale = params[..., 3:4]  # (B, N, 1) in ordered space
+
+                # Asymmetric soft clamp via arctan (Andrade et al. 2024)
+                log_scale = _asymmetric_clamp(log_scale, self.alpha_pos, self.alpha_neg)
+
+                # Apply affine transform in ordered space: y_i = exp(log_scale_i) * x_i + shift_i
+                scale = log_scale.exp()  # (B, N, 1)
+                y_ordered = scale * pos_ordered + shift  # (B, N, 3)
+
+                # Log-determinant: each real atom contributes 3 * log_scale_i
+                # Compute in ordered space using ordered mask
+                log_scale_sq = log_scale.squeeze(-1)  # (B, N)
+                log_det = (3.0 * log_scale_sq * mask_ordered).sum(dim=-1)  # (B,)
+
+            # Zero padding in ordered space
+            y_ordered = y_ordered * mask_ordered.unsqueeze(-1)
+
+            # Flip back to original ordering if needed
+            if self.reverse:
+                y = y_ordered.flip(1)
+            else:
+                y = y_ordered
+
         else:
-            log_scale = params[..., 3:4]       # (B, N, 1)
+            # --- SOS path (original mechanism, unchanged) ---
+            # Run transformer to get per-atom context
+            atom_out = self._run_transformer(pos_ordered, emb_ordered, mask_ordered)  # (B, N, d_model)
 
-            # Asymmetric soft clamp via arctan (Andrade et al. 2024)
-            # Bounds expansion to exp(alpha_pos) per layer, allows contraction to exp(-alpha_neg)
-            log_scale = _asymmetric_clamp(log_scale, self.alpha_pos, self.alpha_neg)
+            if self.reverse:
+                # Flip back to original ordering
+                atom_out = atom_out.flip(1)
 
-            # Apply affine transform: y_i = exp(log_scale_i) * x_i + shift_i
-            scale = log_scale.exp()            # (B, N, 1)
-            y = scale * positions + shift      # (B, N, 3)
+            # Predict affine params from context
+            params = self.out_proj(atom_out)   # (B, N, 3 or 4)
+            shift = params[..., :3]            # (B, N, 3)
 
-            # Log-determinant: each real atom contributes 3 * log_scale_i
-            log_scale_sq = log_scale.squeeze(-1)   # (B, N)
-            log_det = (3.0 * log_scale_sq * atom_mask).sum(dim=-1)  # (B,)
+            if self.shift_only:
+                # Volume-preserving: y_i = x_i + shift_i, log_det = 0
+                y = positions + shift
+                log_det = torch.zeros(positions.shape[0], device=positions.device)
+            else:
+                log_scale = params[..., 3:4]       # (B, N, 1)
 
-        # Zero out padding positions
-        y = y * atom_mask.unsqueeze(-1)
+                # Asymmetric soft clamp via arctan (Andrade et al. 2024)
+                # Bounds expansion to exp(alpha_pos) per layer, allows contraction to exp(-alpha_neg)
+                log_scale = _asymmetric_clamp(log_scale, self.alpha_pos, self.alpha_neg)
+
+                # Apply affine transform: y_i = exp(log_scale_i) * x_i + shift_i
+                scale = log_scale.exp()            # (B, N, 1)
+                y = scale * positions + shift      # (B, N, 3)
+
+                # Log-determinant: each real atom contributes 3 * log_scale_i
+                log_scale_sq = log_scale.squeeze(-1)   # (B, N)
+                log_det = (3.0 * log_scale_sq * atom_mask).sum(dim=-1)  # (B,)
+
+            # Zero out padding positions
+            y = y * atom_mask.unsqueeze(-1)
 
         return y, log_det
 
@@ -628,6 +795,12 @@ class TarFlowBlock(nn.Module):
         Since shift and log_scale for atom i depend on x_{<i}, we must
         recover atoms one at a time in the causal order.
 
+        Two code paths controlled by self.use_output_shift:
+          - SOS path: existing mechanism — run transformer at each step, use output[step] directly.
+          - Output-shift path: at step i, run full transformer on x_work, apply output shift
+            to get params, use params[i] (which is transformer_output[i-1]) to recover x_work[i].
+            Step 0 special: params[0] = zeros (identity) → x_work[0] = y_work[0].
+
         Args:
             y: (batch, max_atoms, 3) transformed positions
             atom_type_emb: (batch, max_atoms, emb_dim)
@@ -640,38 +813,69 @@ class TarFlowBlock(nn.Module):
         device = y.device
 
         if self.reverse:
-            # Causal order in reverse direction: process from atom N-1 down to 0
-            order = list(range(N - 1, -1, -1))
-            # Working in reversed space
+            # Working in ordered (reversed) space
             y_work = y.flip(1)
             emb_work = atom_type_emb.flip(1)
             mask_work = atom_mask.flip(1)
         else:
-            order = list(range(N))
             y_work = y
             emb_work = atom_type_emb
             mask_work = atom_mask
 
         x_work = torch.zeros_like(y_work)
 
-        for step in range(N):
-            # Run transformer on current x_work (partially recovered)
-            atom_out = self._run_transformer(x_work, emb_work, mask_work)  # (B, N, d_model)
+        if self.use_output_shift:
+            # --- Output-shift inverse path ---
+            # Step 0: params[0] = zeros (output shift guarantees this) → identity transform
+            #   x_work[0] = y_work[0]
+            x_work[:, 0, :] = y_work[:, 0, :]
 
-            params = self.out_proj(atom_out)  # (B, N, 3 or 4)
-            shift = params[..., :3]           # (B, N, 3)
-            shift_step = shift[:, step, :]    # (B, 3)
+            # Steps 1..N-1: run transformer on x_work (partially recovered),
+            # apply output shift, use params[step] to recover x_work[step].
+            # params[step] = transformer_output[step-1] — conditioned on x_work[0..step-1].
+            # Since x_work[0..step-1] are already correctly recovered, this is causal.
+            for step in range(1, N):
+                atom_out = self._run_transformer_output_shift(
+                    x_work, emb_work, mask_work
+                )  # (B, N, d_model)
 
-            if self.shift_only:
-                # Volume-preserving inverse: x_i = y_i - shift_i
-                x_work[:, step, :] = y_work[:, step, :] - shift_step
-            else:
-                log_scale = params[..., 3:4]      # (B, N, 1)
-                log_scale = _asymmetric_clamp(log_scale, self.alpha_pos, self.alpha_neg)
-                scale = log_scale.exp()
-                scale_step = scale[:, step, :]    # (B, 1)
-                # Recover atom at position `step` in causal ordering
-                x_work[:, step, :] = (y_work[:, step, :] - shift_step) / scale_step
+                # Apply output shift: params[:,i,:] = atom_out[:,i-1,:]
+                params_raw = self.out_proj(atom_out)  # (B, N, out_dim)
+                params = torch.cat([
+                    torch.zeros_like(params_raw[:, :1, :]),
+                    params_raw[:, :-1, :],
+                ], dim=1)  # (B, N, out_dim)
+
+                shift_step = params[:, step, :3]  # (B, 3)
+
+                if self.shift_only:
+                    x_work[:, step, :] = y_work[:, step, :] - shift_step
+                else:
+                    log_scale_step = params[:, step, 3:4]  # (B, 1)
+                    log_scale_step = _asymmetric_clamp(log_scale_step, self.alpha_pos, self.alpha_neg)
+                    scale_step = log_scale_step.exp()  # (B, 1)
+                    x_work[:, step, :] = (y_work[:, step, :] - shift_step) / scale_step
+
+        else:
+            # --- SOS inverse path (original mechanism, unchanged) ---
+            for step in range(N):
+                # Run transformer on current x_work (partially recovered)
+                atom_out = self._run_transformer(x_work, emb_work, mask_work)  # (B, N, d_model)
+
+                params = self.out_proj(atom_out)  # (B, N, 3 or 4)
+                shift = params[..., :3]           # (B, N, 3)
+                shift_step = shift[:, step, :]    # (B, 3)
+
+                if self.shift_only:
+                    # Volume-preserving inverse: x_i = y_i - shift_i
+                    x_work[:, step, :] = y_work[:, step, :] - shift_step
+                else:
+                    log_scale = params[..., 3:4]      # (B, N, 1)
+                    log_scale = _asymmetric_clamp(log_scale, self.alpha_pos, self.alpha_neg)
+                    scale = log_scale.exp()
+                    scale_step = scale[:, step, :]    # (B, 1)
+                    # Recover atom at position `step` in causal ordering
+                    x_work[:, step, :] = (y_work[:, step, :] - shift_step) / scale_step
 
         if self.reverse:
             x_work = x_work.flip(1)
@@ -705,6 +909,7 @@ class TarFlow(nn.Module):
         use_bidir_types: if True, use BidirectionalTypeEncoder (hyp_004)
         use_pos_enc: if True, add learned positional encodings per block (hyp_004)
         zero_padding_queries: if True, zero padding atom queries before attention (hyp_005)
+        use_output_shift: if True, use Apple's output-shift mechanism (hyp_006)
         log_scale_max: DEPRECATED — kept for backward compat, ignored
     """
 
@@ -725,6 +930,7 @@ class TarFlow(nn.Module):
         use_bidir_types: bool = False,
         use_pos_enc: bool = False,
         zero_padding_queries: bool = False,
+        use_output_shift: bool = False,
         log_scale_max: float = 0.5,  # DEPRECATED — kept for backward compat
     ):
         super().__init__()
@@ -739,6 +945,7 @@ class TarFlow(nn.Module):
         self.use_bidir_types = use_bidir_types
         self.use_pos_enc = use_pos_enc
         self.zero_padding_queries = zero_padding_queries
+        self.use_output_shift = use_output_shift
 
         # Atom type embedding (shared across all blocks)
         self.atom_type_emb = nn.Embedding(n_atom_types, atom_type_emb_dim)
@@ -773,6 +980,7 @@ class TarFlow(nn.Module):
                 use_pos_enc=use_pos_enc,
                 max_atoms=max_atoms,
                 zero_padding_queries=zero_padding_queries,
+                use_output_shift=use_output_shift,
             )
             for i in range(n_blocks)
         ])
