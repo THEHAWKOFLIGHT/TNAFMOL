@@ -80,8 +80,12 @@
     },
     {
       "name": "source_integration",
-      "status": "pending",
-      "acceptance": "No .py files in experiment dir; src/ reflects current practice"
+      "status": "completed",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice",
+      "completed_at": "2026-03-06T00:00:00Z",
+      "result": {
+        "note": "N/A — all code already in src/. No .py files in experiment dir. No __pycache__."
+      }
     },
     {
       "name": "merge_and_tag",
