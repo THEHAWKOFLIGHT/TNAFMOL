@@ -1355,3 +1355,33 @@ in model.py (correct, no negative effect). Escalate to Postdoc with updated diag
 - `8df4716` — [hyp_008] code: add per_dim_scale to model and train
 - `fdd49a1` — [hyp_008] config: pre-run snapshot for phase1_ethanol
 - `3717c8b` — [hyp_008] results: Phase 1 investigation FAILED — best VF 39.2%, re-diagnosis
+
+---
+
+## 2026-03-05 — hyp_009: Pre-Norm + Layers Per Block Architectural Alignment
+**Branch:** `exp/hyp_009`
+
+### Decisions & Reasoning
+- Root cause of 56pp VF gap confirmed from hyp_008 re-diagnosis: (1) post-norm vs pre-norm, (2) layers_per_block=1 vs 2, (3) dropout=0.1 vs 0.0
+- Implementation approach: add `use_pre_norm` (bool, default False) and `layers_per_block` (int, default 1) to TarFlowBlock and TarFlow
+- Refactored single attn+ffn into nn.ModuleList of layers (each layer = nn.ModuleDict with attn, attn_norm, attn_dropout, ffn, ffn_norm)
+- Post-norm path (use_pre_norm=False, layers_per_block=1): mathematically identical to original code — verified by test 1
+- Pre-norm path: apply LayerNorm BEFORE sublayer; add final_norm after all sublayers
+- Both _run_transformer and _run_transformer_output_shift updated with same logic
+- Backward compat default: use_pre_norm=False, layers_per_block=1 → original behavior
+- DEFAULT_CONFIG updated with "use_pre_norm": False, "layers_per_block": 1
+- TarFlow constructor call in train.py updated to pass both new params
+- Unit tests written in src/test_hyp009.py — 6/6 passed
+
+### INTENTION (write-before-execute): Phase 1 validation run
+- Config: use_pre_norm=True, layers_per_block=2, dropout=0.0, n_blocks=4, d_model=256
+- Run on cuda:8 (test GPU), 5k steps
+- Expect VF >= 90% (this is the architectural fix that should close the 56pp gap)
+- If VF < 90%: investigate further
+
+### New Files Created
+- `src/test_hyp009.py` — unit tests for pre-norm + layers_per_block
+- `experiments/hypothesis/hyp_009_arch_alignment/reports/plan_report.md`
+- `experiments/hypothesis/hyp_009_arch_alignment/angles/sanity/val/config_phase1_ethanol.json`
+
+### Commits
