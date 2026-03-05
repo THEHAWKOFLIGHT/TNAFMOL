@@ -1,0 +1,91 @@
+{
+  "exp_id": "hyp_006",
+  "command": "OPTIMIZE",
+  "status": "pending",
+  "created": "2026-03-04T00:00:00Z",
+  "last_updated": "2026-03-04T00:00:00Z",
+  "machine": {
+    "host": "localhost",
+    "user": "kai_nelson",
+    "gpu": null,
+    "pid": null,
+    "claude_session_id": null
+  },
+  "artifacts": {
+    "dataset": "data/",
+    "checkpoints": [],
+    "raw_outputs": []
+  },
+  "steps": [
+    {
+      "name": "implementation",
+      "status": "pending",
+      "acceptance": "Output-shift mode added to src/model.py and src/train.py. All unit tests pass: output shift zeros, self-inclusive causal mask, no SOS in sequence, forward-inverse consistency, backward compatibility, zero-init, Jacobian triangularity."
+    },
+    {
+      "name": "diagnostic",
+      "status": "pending",
+      "acceptance": "500-step diagnostic on ethanol with output-shift. log_det/dof < 5.0 at step 500 confirms hypothesis. If log_det/dof > 5.0 at step 100, hypothesis is wrong — report FAILURE."
+    },
+    {
+      "name": "angle_sanity_val",
+      "status": "pending",
+      "acceptance": "1000-step multi-molecule run with output-shift. VF > 0.40 on ethanol. If not met, try alpha_pos=1.0 fallback."
+    },
+    {
+      "name": "angle_sanity_sweep",
+      "status": "pending",
+      "acceptance": "W&B sweep completed if SANITY val is promising; best config selected."
+    },
+    {
+      "name": "angle_sanity_full",
+      "status": "pending",
+      "acceptance": "Full training run with best SANITY config; VF >= 0.50 on >= 4/8 molecules."
+    },
+    {
+      "name": "angle_heuristics_val",
+      "status": "pending",
+      "acceptance": "Validation run with heuristic intervention if SANITY promising but below target."
+    },
+    {
+      "name": "angle_heuristics_sweep",
+      "status": "pending",
+      "acceptance": "W&B sweep over lr, n_steps, alpha_pos. Best config selected."
+    },
+    {
+      "name": "angle_heuristics_full",
+      "status": "pending",
+      "acceptance": "Full training run with best HEURISTICS config."
+    },
+    {
+      "name": "angle_scale_val",
+      "status": "pending",
+      "acceptance": "Validation run with d_model=256, n_blocks=12 if HEURISTICS shows capacity bottleneck."
+    },
+    {
+      "name": "angle_scale_sweep",
+      "status": "pending",
+      "acceptance": "Sweep if SCALE val is promising."
+    },
+    {
+      "name": "angle_scale_full",
+      "status": "pending",
+      "acceptance": "Full training run with best SCALE config, 50k steps."
+    },
+    {
+      "name": "final_report",
+      "status": "pending",
+      "acceptance": "Final Experiment Report written to reports/final_report.md with all results, plots, and story validation."
+    },
+    {
+      "name": "source_integration",
+      "status": "pending",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice."
+    },
+    {
+      "name": "merge_and_tag",
+      "status": "pending",
+      "acceptance": "Merged to main with tag hyp_006; pre-merge checks pass."
+    }
+  ]
+}
