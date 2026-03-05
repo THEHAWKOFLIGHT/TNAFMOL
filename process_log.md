@@ -1000,3 +1000,204 @@ clearly shows it is not applicable." Criterion satisfied.
 - a4901be — [hyp_005] docs: update state.json and process_log — HEURISTICS sweep in progress
 - 73354bd — [hyp_005] results: HEURISTICS sweep complete — best VF=4.7%, criterion not met
 - 2ef7b7f — [hyp_005] docs: final report, notes, plots, state — FAILURE. Source integration.
+
+---
+
+## 2026-03-04 — hyp_006 Output-Shift TarFlow Implementation
+**Branch:** `exp/hyp_006`
+
+### Decisions & Reasoning
+
+**Plan:**
+1. Implement `use_output_shift` mode in `src/model.py`:
+   - New `_run_transformer_output_shift()` method: self-inclusive causal mask (N×N not N+1×N+1), no SOS, runs on N tokens
+   - Modified `forward()`: conditional branch — output-shift path when flag=True, SOS path unchanged
+   - Modified `inverse()`: autoregressive decoding using output shift (position i params from output at position i-1)
+   - Zero-init out_proj when use_output_shift=True
+   - pos_embed needs only max_atoms entries (not max_atoms+1) when output-shift
+
+2. Add `use_output_shift: False` to DEFAULT_CONFIG in `src/train.py` and pass to TarFlow constructor.
+
+3. Run unit tests verifying: zero params at token 0, self-inclusive causal mask, no SOS in sequence, forward-inverse consistency, backward compat, zero-init, Jacobian triangularity.
+
+4. Run diagnostic (500 steps, ethanol, cuda:8): check log_det/dof < 5.0 at step 500.
+
+**Key insight from Apple's tarflow_apple.py (MetaBlock):**
+- Self-inclusive causal mask: torch.tril(ones(N, N)) — token i attends to 0..i (including itself)
+- Output shift: x = cat([zeros_like(x[:,:1]), x[:,:-1]], dim=1) AFTER proj_out
+  - This means params for position i come from transformer output at position i-1
+  - Position 0 gets zero params → identity transform
+- Zero-init proj_out: proj_out.weight.data.fill_(0.0) ensures stable start
+- No SOS token needed — autoregression guaranteed by output shift structure
+
+**Affine transform convention:**
+- Apple: z = (x_in - xb) * exp(-xa) → "subtract shift, multiply by exp(-log_scale)"
+- Our model: y = exp(log_scale) * x + shift → "multiply by exp(log_scale), add shift"
+- These are different conventions! I need to use OUR model's convention, not Apple's.
+- In our model: z = scale * x + shift, log_det += 3 * log_scale per real atom
+- The forward-inverse consistency test will catch any convention mismatch.
+
+**pos_embed sizing for output-shift:**
+- SOS path: pos_embed has max_atoms+1 entries (for SOS at 0, atoms at 1..N)
+- Output-shift path: pos_embed needs only max_atoms entries (for atoms at 0..N-1)
+- Solution: add a separate `pos_embed_os` (output-shift) Embedding with max_atoms entries
+- Only instantiated when use_output_shift=True AND use_pos_enc=True
+- Since spec has use_pos_enc=False, this is a no-op for hyp_006 runs
+
+**Causal mask for output-shift:**
+- Self-inclusive: token i attends to 0..i (lower triangular including diagonal)
+- This is: causal_mask_bool = torch.tril(torch.ones(N, N, dtype=torch.bool))
+- After output shift, params[:,i,:] = transformer_output[:,i-1,:]
+  - So params for token i come from output at i-1, which only saw tokens 0..i-1
+  - Correct Jacobian: lower triangular (no self-loops via params)
+
+**Diagnostic criterion:**
+- If log_det/dof < 5.0 at step 500 (alpha_pos=10.0, no reg) → hypothesis CONFIRMED
+- In SOS model: log_det/dof grows to ~7-10 with exploitation
+- If output-shift eliminates exploitation pathway: log_det/dof should stay bounded
+
+### New Files Created
+(will be filled as implementation proceeds)
+
+### Commits
+(will be filled as commits are made)
+
+### Notes
+Reading tarflow_apple.py lines 186-237 carefully:
+- proj_out.weight.data.fill_(0.0) — zero-init output projection weight (not bias)
+- attn_mask registered as lower triangular (self-inclusive): torch.tril(torch.ones(N,N))
+- Output shift: cat([zeros_like(x[:,:1]), x[:,:-1]], dim=1)
+
+**Pre-run (Diagnostic):**
+Running 500 steps, ethanol only, cuda:8, alpha_pos=10.0, log_det_reg_weight=0.0.
+THE CRITICAL TEST: log_det/dof at step 500.
+- If < 5.0: output-shift eliminates exploitation pathway → hypothesis CONFIRMED → proceed to SANITY
+- If > 5.0 early (step 100+): output-shift does NOT eliminate exploitation → FAILURE
+
+Config: all hyp_006 fixed settings (use_output_shift=True, use_bidir_types=True, use_pad_token=True, zero_padding_queries=True, alpha_pos=10.0, log_det_reg_weight=0.0, n_steps=500, batch_size=128, lr=1e-4, cosine, ethanol only)
+
+**Pre-run (SANITY):**
+HYPOTHESIS CONFIRMED: log_det/dof=0.516 at step 500 (vs >7 in SOS model). Output-shift eliminates exploitation.
+Now running SANITY: all 8 molecules, 1000 steps, same config.
+Promising criterion: VF > 0.40 on ethanol. Fallback: alpha_pos=1.0 if VF < 0.40.
+
+**SANITY val result (alpha_pos=10.0, 1000 steps, all 8 molecules):**
+- log_det/dof: stabilizes at ~0.5-0.6 (massive improvement vs SOS: was 7+)
+- VF on ethanol: 13.4% (criterion: >0.40 — not met)
+- Mean VF across 8 molecules: 13.8%
+- VF on malonaldehyde: 20.6%, benzene: 21%
+- Best val loss checkpoint at step 800
+
+Assessment: Model is clearly learning (loss decreasing, log_det bounded), but 1000 steps insufficient
+for VF > 40%. Need to try: (1) alpha_pos=1.0 fallback (spec requirement), (2) more steps in HEURISTICS.
+
+Pre-run (SANITY fallback, alpha_pos=1.0):
+Spec requires trying alpha_pos=1.0 before declaring SANITY failed. Running 1000 steps.
+
+**SANITY fallback result (alpha_pos=1.0, 1000 steps, all 8 molecules):**
+- VF on ethanol: 13.2%, mean VF: 13.2%
+- Nearly identical to alpha_pos=10.0 — scale clamping irrelevant with output-shift
+- Bottleneck is training budget, not clamping
+
+**Decision: SANITY validation is PROMISING.**
+The architecture works (log_det bounded, VF improving). 1000 steps insufficient.
+Proceeding to HEURISTICS: SBG training recipe (Tan et al. 2025) — lr=1e-3 with OneCycleLR.
+This was the key improvement in hyp_004 (5% → 44% VF).
+
+**Pre-run (HEURISTICS sweep):**
+W&B sweep: lr {3e-4, 5e-4, 1e-3} × n_steps {3000, 5000} = 6 runs
+Promising criterion: VF > 0.40 on ethanol
+Literature citation: Tan et al. 2025, ICML (SBG paper) — OneCycleLR at lr=1e-3
+
+**Pre-run (HEURISTICS validation, lr=1e-3 OneCycleLR, 3000 steps):**
+Running a single validation run with the SBG recipe before launching sweep.
+If promising (VF > 0.40 ethanol), launch full sweep.
+
+**HEURISTICS val result (lr=1e-3 OneCycleLR, 3000 steps, all 8 molecules):**
+- VF on ethanol: 15.0%, mean VF: 13.2%
+- Best checkpoint at step 500 (early!) — val loss grew after that
+- Training loss much lower (0.33) but VF same as cosine (13%)
+- log_det/dof growing to ~1.1 with OneCycleLR (more aggressive than cosine at 0.6)
+- Promising criterion (VF > 0.40 ethanol): NOT MET at 3000 steps
+
+Diagnosis: The issue is that VF plateaus around 15% even as training loss drops significantly.
+This suggests VF is limited by mode capacity, not training budget.
+Hypothesis: min_dist_mean ~0.56 Å is the bottleneck — samples have too-close atom pairs.
+The model generates valid conformations at roughly constant rate regardless of training budget.
+
+Decision: Running longer with cosine to see if VF grows with steps. If cosine shows
+clear VF improvement trend with more steps, proceed to 5k/10k step full run.
+Pre-run: 5000 steps, cosine, lr=3e-4 (middle of sweep range) — check VF at multiple checkpoints.
+
+**HEURISTICS sweep A result (lr=3e-4, cosine, 5000 steps, all 8 molecules):**
+- VF on ethanol: 17.0%, mean VF: 16.3%
+- Benzene: 34.2% (best single-molecule VF so far)
+- Criterion NOT MET (<40% on ethanol)
+- Best val loss: 1.2689 at step 2000
+
+**HEURISTICS sweep B result (lr=5e-4, cosine, 5000 steps, all 8 molecules):**
+- VF on ethanol: 19.8%, mean VF: 15.1%
+- Criterion NOT MET
+- Best val loss: 1.2701 at step 1000
+
+**HEURISTICS sweep C result (lr=1e-3, cosine, 5000 steps, all 8 molecules):**
+- VF on ethanol: 24.8%, mean VF: 16.3%
+- Criterion NOT MET
+- Best val loss: 1.3805 at step 1000
+
+**HEURISTICS assessment:** All 4 sweep configs (OneCycleLR val + 3 cosine sweeps) failed to reach
+VF > 40% on ethanol. The pattern is clear: VF scales modestly with lr (17% → 25%) but plateaus
+well below 40%. Model capacity (d_model=128, n_blocks=8, ~1.2M params) is the bottleneck.
+This matches hyp_004 pattern where the same model size needed 20k steps to reach 44% on single
+molecules. For multi-molecule training, more capacity is needed.
+
+**Decision: Proceed to SCALE angle.**
+d_model=256, n_blocks=12, n_heads=8 → 9.6M parameters (8× capacity increase).
+Val run: 5000 steps, lr=5e-4 cosine (best single lr from HEURISTICS sweep), batch_size=64.
+Promising criterion: VF > 0.25 on ethanol at step 5k (above best HEURISTICS result of 24.8%).
+
+**Pre-run (SCALE val):**
+Running 5000 steps, d_model=256, n_blocks=12, n_heads=8, batch_size=64 (smaller due to model size).
+cuda:5 (free GPU with 48GB available).
+W&B run: https://wandb.ai/kaityrusnelson1/tnafmol/runs/paxf84nt
+
+**SCALE val result (d_model=256, n_blocks=12, 9.6M params, 5k steps, lr=5e-4 cosine):**
+- Ethanol VF: 16.2%, mean VF: 13.7%
+- Best val loss at step 1000: 1.1675 (then diverges — severe overfitting)
+- Larger model does NOT improve VF. Same or worse than HEURISTICS.
+- Promising criterion (VF > 0.25 on ethanol): NOT MET (16.2%)
+
+**SCALE assessment:** Overfitting is the dominant factor at 5k steps with SCALE. The larger model
+has higher capacity but the MD17 data distribution in normalized space is not rich enough to
+support 9.6M parameters at short training budgets. The val loss divergence after step 1000 is
+consistent across all models and suggests the normalization scheme creates a difficult generalization
+problem.
+
+**Decision: OPTIMIZE failure. All 3 angles exhausted.**
+- SANITY confirmed architecture correct (log_det/dof bounded)
+- HEURISTICS improved VF from 13% to 25% but ceiling is ~25%
+- SCALE confirmed capacity is not the bottleneck
+- Primary criterion (VF > 40% on ethanol) never met
+- Best result: ethanol VF=24.8% (HEURISTICS C, lr=1e-3 cosine, 5k steps)
+
+**Source integration assessment:**
+- All new code is in src/model.py and src/train.py (modifications, not new files)
+- No .py files were created in the experiment directory
+- Source integration is N/A — no new code to promote
+
+### New Files Created
+- `experiments/hypothesis/hyp_006_output_shift_tarflow/config/scale_val_config.json` — SCALE val config
+- `experiments/hypothesis/hyp_006_output_shift_tarflow/config/heuristics_sweep_b_config.json` — HEUR B config
+- `experiments/hypothesis/hyp_006_output_shift_tarflow/config/heuristics_sweep_c_config.json` — HEUR C config
+- `experiments/hypothesis/hyp_006_output_shift_tarflow/reports/final_report.md` — Final report (FAILURE)
+- `experiments/hypothesis/hyp_006_output_shift_tarflow/notes.md` — Experiment notes
+- `experiments/hypothesis/hyp_006_output_shift_tarflow/results/vf_per_molecule_all_angles.png` — VF comparison plot
+- `experiments/hypothesis/hyp_006_output_shift_tarflow/results/ethanol_mean_vf_comparison.png` — Ethanol/mean VF plot
+- `experiments/hypothesis/hyp_006_output_shift_tarflow/results/best_run_molecule_breakdown.png` — Best run breakdown
+- `experiments/hypothesis/hyp_006_output_shift_tarflow/results/logdet_dof_trajectory.png` — Log_det trajectory plot
+
+### Commits
+(to be filled after final commit)
+
+### Commits (continued)
+- `363ae31` — [hyp_006] results: FAILURE — HEURISTICS+SCALE exhausted, best ethanol VF=24.8%

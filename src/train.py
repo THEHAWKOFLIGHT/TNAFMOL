@@ -86,6 +86,9 @@ DEFAULT_CONFIG = {
     "zero_padding_queries": False,  # zero padding atom queries before attention
     "noise_sigma": 0.0,          # per-coord Gaussian noise std on real atoms (0.0 = off)
 
+    # hyp_006 output-shift flag (default False for backward compatibility)
+    "use_output_shift": False,   # use Apple's output-shift mechanism instead of SOS+strictly-causal
+
     # Training
     "n_steps": 500,          # default: diagnostic run
     "batch_size": 128,
@@ -339,6 +342,7 @@ def train(cfg: dict):
         use_bidir_types=cfg.get("use_bidir_types", False),
         use_pos_enc=cfg.get("use_pos_enc", False),
         zero_padding_queries=cfg.get("zero_padding_queries", False),
+        use_output_shift=cfg.get("use_output_shift", False),
     ).to(device)
     cfg["n_atom_types"] = n_atom_types  # log to wandb config
 
