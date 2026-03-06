@@ -1414,4 +1414,33 @@ INTENTION (write-before-execute): Diagnostic runs to confirm hypothesis
 - `experiments/hypothesis/hyp_009_arch_alignment/angles/sanity/diag/config_prenorm_ldr1.json`
 - `experiments/hypothesis/hyp_009_arch_alignment/run_diag.py`
 
+### Diagnostic Run Results (2026-03-05 16:20-16:28)
+
+Run results (5k steps each, cuda:9):
+1. post-norm + lpb=1 + ldr=5.0: VF=29.8%, val_loss best at step unknown
+2. pre-norm + lpb=2 + ldr=1.0: VF=34.0%, val_loss=1.52 at step 2400 (worse than ldr=5.0!)
+
+KEY FINDING: pre-norm vs post-norm = 1.4pp difference (29.8% vs 28.4%)
+- Pre-norm is NOT the bottleneck
+- Reducing ldr (1.0 vs 5.0) gives only 5.6pp improvement
+- With ldr=1.0, val_loss WORSENS (1.52 vs 1.29) despite VF improvement
+- Pattern consistent with PARTIAL exploitation: lower ldr lets model use log_det to
+  expand coordinates, giving better atom distances WITHOUT learning the distribution
+
+Root cause confirmed: affine convention allows log_det exploitation.
+- Our convention: y=exp(log_scale)*x+shift. Forward = expansion. log_det positive → reduces NLL.
+- Apple convention: z=exp(-xa)*(x-xb). Forward = contraction. logdet negative → increases NLL.
+- Fix: force log_scale <= 0 (contraction-only in forward). Equivalent to alpha_pos ~ 0.
+- Test: alpha_pos=0.001 (effectively 0), alpha_neg=10.0, ldr=0.0
+
+INTENTION (write-before-execute): Run contraction-only test on cuda:9
+- Config: alpha_pos=0.001, alpha_neg=10.0, ldr=0.0, pre-norm+lpb=2, T=9
+- Expect: VF >> 34% if contraction-only prevents exploitation and model can learn
+- If VF >= 90%: contraction-only is the fix, update sanity angle
+- If VF < 90%: investigate further
+
+### New Files Created (continued)
+- `experiments/hypothesis/hyp_009_arch_alignment/angles/sanity/diag/config_alpha_pos0.json` — contraction-only test
+- `experiments/hypothesis/hyp_009_arch_alignment/run_diag2.py`
+
 ### Commits
