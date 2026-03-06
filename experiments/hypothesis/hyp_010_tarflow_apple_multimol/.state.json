@@ -1,0 +1,61 @@
+{
+  "exp_id": "hyp_010",
+  "command": "OPTIMIZE",
+  "status": "in_progress",
+  "created": "2026-03-06T13:00:00Z",
+  "last_updated": "2026-03-06T13:00:00Z",
+  "machine": {
+    "host": "localhost",
+    "user": "kai_nelson",
+    "gpu": "cuda:7",
+    "pid": null,
+    "claude_session_id": null
+  },
+  "artifacts": {
+    "dataset": "data/",
+    "checkpoints": [],
+    "raw_outputs": []
+  },
+  "steps": [
+    {
+      "name": "implementation",
+      "status": "pending",
+      "acceptance": "src/train_apple.py written; TarFlow1DMol training loop working; forward-inverse consistency verified"
+    },
+    {
+      "name": "phase1_sanity_gate",
+      "status": "pending",
+      "acceptance": "Ethanol T=9, TarFlow1DMol, 5k steps: VF >= 90% (reproduces und_001)"
+    },
+    {
+      "name": "phase2_padding_val",
+      "status": "pending",
+      "acceptance": "Ethanol T=9 vs T=21 with padding mask: |VF(T=9) - VF(T=21)| < 10pp, both >= 85%"
+    },
+    {
+      "name": "phase3_sanity_multimol",
+      "status": "pending",
+      "acceptance": "All 8 molecules, T=21, 20k steps: VF > 50% ethanol AND mean VF > 40%"
+    },
+    {
+      "name": "phase3_heuristics",
+      "status": "pending",
+      "acceptance": "Sweep lr x ldr: best config achieves VF >= 50% on >= 4/8 molecules (if sanity promising)"
+    },
+    {
+      "name": "phase3_scale",
+      "status": "pending",
+      "acceptance": "Increased capacity (channels=384+, 50k steps): VF >= 50% on >= 4/8 molecules (if heuristics insufficient)"
+    },
+    {
+      "name": "source_integration",
+      "status": "pending",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice; pre-merge checks pass"
+    },
+    {
+      "name": "merge_and_tag",
+      "status": "pending",
+      "acceptance": "Merged to main with tag hyp_010; pre-merge checks pass"
+    }
+  ]
+}
