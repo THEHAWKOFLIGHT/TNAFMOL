@@ -1500,8 +1500,12 @@ INTENTION (write-before-execute): Launch 20k step multi-molecule run via Slurm o
 - `experiments/hypothesis/hyp_010_tarflow_apple_multimol/angles/sanity/full/config.json` — Phase 3 full run config
 - `scripts/slurm_hyp010_phase3.sh` — Phase 3 Slurm script
 
+### Slurm Jobs
+- `SLURM_JOB_ID=4157` — Phase 3 SANITY, 8 molecules, T=21, 20k steps, sbatch scripts/slurm_hyp010_phase3.sh
+
 ### Commits (this session)
 - `4b65477` — [hyp_010] code: fix sampling bug — zero padding latent before reverse pass
 - `85a6f2e` — [hyp_010] code: fix attention mask in MetaBlockWithCond — causal only, no key masking
 - `f8c9dc6` — [hyp_010] config: T=21 validation run with both sampling + attention mask fixes
 - `6addf0c` — [hyp_010] results: Phase 2 diagnostic runs — T=21 padding fix investigation
+- `b5de8aa` — [hyp_010] config: pre-run snapshot for Phase 3 multi-molecule full run
