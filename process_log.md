@@ -1503,9 +1503,22 @@ INTENTION (write-before-execute): Launch 20k step multi-molecule run via Slurm o
 ### Slurm Jobs
 - `SLURM_JOB_ID=4157` — Phase 3 SANITY, 8 molecules, T=21, 20k steps, sbatch scripts/slurm_hyp010_phase3.sh
 
+### Phase 3 Results (2026-03-05)
+SLURM_JOB_ID=4157 on escher completed. Wall time: ~18.5 minutes. Exit code: 0.
+Final checkpoint (step 20000) evaluated:
+- Ethanol: VF=64.0% (criterion: >50%) PASSED
+- Mean VF: 71.6% (criterion: >40%) PASSED
+- All 8 molecules: VF > 50%
+- Best: malonaldehyde 82.6%, Worst: uracil 63.6%
+- Comparison to hyp_007: ethanol +8.2pp, mean +36.9pp, aspirin +58.2pp (9.2% → 67.4%)
+
+Phase 3 SANITY PASSED. HEURISTICS and SCALE skipped — primary criterion exceeded by large margin.
+
 ### Commits (this session)
 - `4b65477` — [hyp_010] code: fix sampling bug — zero padding latent before reverse pass
 - `85a6f2e` — [hyp_010] code: fix attention mask in MetaBlockWithCond — causal only, no key masking
 - `f8c9dc6` — [hyp_010] config: T=21 validation run with both sampling + attention mask fixes
 - `6addf0c` — [hyp_010] results: Phase 2 diagnostic runs — T=21 padding fix investigation
 - `b5de8aa` — [hyp_010] config: pre-run snapshot for Phase 3 multi-molecule full run
+- `c9c3133` — [hyp_010] docs: log Phase 3 Slurm job ID and update process_log
+- `39cc986` — [hyp_010] docs: add hyp_009 and hyp_010 entries to experiment_log

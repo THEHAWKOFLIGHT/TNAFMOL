@@ -3,7 +3,7 @@
   "command": "OPTIMIZE",
   "status": "in_progress",
   "created": "2026-03-06T13:00:00Z",
-  "last_updated": "2026-03-07T00:00:00Z",
+  "last_updated": "2026-03-07T02:10:00Z",
   "machine": {
     "host": "localhost",
     "user": "kai_nelson",
@@ -17,11 +17,14 @@
       "angles/sanity/val/best.pt",
       "angles/sanity/val/final.pt",
       "angles/sanity/val_T21attnfix/best.pt",
-      "angles/sanity/val_T21attnfix/final.pt"
+      "angles/sanity/val_T21attnfix/final.pt",
+      "angles/sanity/full/best.pt",
+      "angles/sanity/full/final.pt"
     ],
     "raw_outputs": [
       "angles/sanity/val/raw/",
-      "angles/sanity/val_T21attnfix/raw/"
+      "angles/sanity/val_T21attnfix/raw/",
+      "angles/sanity/full/raw/"
     ]
   },
   "steps": [
@@ -57,18 +60,32 @@
     },
     {
       "name": "phase3_sanity_multimol",
-      "status": "pending",
-      "acceptance": "All 8 molecules, T=21, 20k steps: VF > 50% ethanol AND mean VF > 40%"
+      "status": "completed",
+      "acceptance": "All 8 molecules, T=21, 20k steps: VF > 50% ethanol AND mean VF > 40%",
+      "completed_at": "2026-03-07T02:10:00Z",
+      "result": {
+        "vf_ethanol": 0.64,
+        "mean_vf": 0.716,
+        "molecules_above_50pct": 8,
+        "per_molecule": {
+          "aspirin": 0.674, "benzene": 0.794, "ethanol": 0.640,
+          "malonaldehyde": 0.826, "naphthalene": 0.810, "salicylic_acid": 0.674,
+          "toluene": 0.674, "uracil": 0.636
+        },
+        "wandb_run": "https://wandb.ai/kaityrusnelson1/tnafmol/runs/tw349mhw",
+        "slurm_job_id": 4157,
+        "note": "Phase 3 PASSED. Ethanol VF=64% > 50%, mean VF=71.6% > 40%. All 8 molecules > 50%."
+      }
     },
     {
       "name": "phase3_heuristics",
-      "status": "pending",
-      "acceptance": "Sweep lr x ldr: best config achieves VF >= 50% on >= 4/8 molecules (if sanity promising)"
+      "status": "skipped",
+      "reason": "Phase 3 SANITY already passed primary criterion. Mean VF=71.6% >> 40% target. SCALE not needed."
     },
     {
       "name": "phase3_scale",
-      "status": "pending",
-      "acceptance": "Increased capacity (channels=384+, 50k steps): VF >= 50% on >= 4/8 molecules (if heuristics insufficient)"
+      "status": "skipped",
+      "reason": "Phase 3 SANITY already passed primary criterion. No further capacity needed."
     },
     {
       "name": "source_integration",

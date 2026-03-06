@@ -537,7 +537,27 @@ it can generalize to multi-molecule training with mean VF > 40%.
 - 8 molecules at T=21, 20k steps via Slurm (SLURM_JOB_ID=4157 on escher).
 - W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/tw349mhw
 - Config: channels=256, num_blocks=4, layers_per_block=2, lr=5e-4 cosine, batch_size=256.
-- Status: RUNNING at step ~11500/20000 as of 2026-03-05.
-- Intermediate observations: logdets stabilizing ~1.87, val_loss trending down from peak (3.24 at step 10500,
-  2.96 at step 11000) — consistent with successful T=21 single-molecule run pattern.
-- Success criterion: VF > 50% ethanol AND mean VF > 40% (to be evaluated on final checkpoint).
+- Status: COMPLETE (SLURM_JOB_ID=4157, ~18.5 min wall time on escher).
+- W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/tw349mhw
+
+**Phase 3 Final Results (final checkpoint, step 20000):**
+
+| Molecule | VF | Min Dist | PW Div |
+|---------|-----|----------|--------|
+| aspirin | 67.4% | 0.831 | 0.014 |
+| benzene | 79.4% | 0.893 | 0.170 |
+| ethanol | 64.0% | 0.829 | 0.039 |
+| malonaldehyde | 82.6% | 0.923 | 0.039 |
+| naphthalene | 81.0% | 0.873 | 0.053 |
+| salicylic_acid | 67.4% | 0.841 | 0.026 |
+| toluene | 67.4% | 0.823 | 0.044 |
+| uracil | 63.6% | 0.817 | 0.051 |
+| **Mean** | **71.6%** | 0.854 | 0.048 |
+
+- Ethanol VF = 64.0% > 50%: CRITERION MET
+- Mean VF = 71.6% > 40%: CRITERION MET (by 31.6pp)
+- All 8 molecules > 50%: exceeded expectation
+- HEURISTICS and SCALE skipped — primary criterion met by large margin.
+
+**Story fit:** FITS. Apple TarFlow generalizes across 8 molecules with correct padding implementation.
+Major improvement over hyp_007 best (ethanol 55.8% → 64.0%, mean 34.7% → 71.6%, aspirin 9.2% → 67.4%).
