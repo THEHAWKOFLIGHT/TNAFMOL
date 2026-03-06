@@ -1,13 +1,10 @@
 {
   "exp_id": "hyp_010",
   "angle": "sanity",
-  "stage": "val_T21fix",
+  "stage": "val_T21attnfix",
   "command": "OPTIMIZE",
-  "run_name_suffix": "phase2_T21_fixedsampling",
-
   "seed": 42,
   "device": "cuda:0",
-
   "seq_length": 21,
   "channels": 256,
   "num_blocks": 4,
@@ -21,28 +18,36 @@
   "use_shared_scale": false,
   "use_clamp": false,
   "log_det_reg_weight": 0.0,
-
   "n_steps": 5000,
   "batch_size": 256,
-  "lr": 5e-4,
+  "lr": 0.0005,
   "lr_schedule": "cosine",
   "warmup_steps": 500,
   "grad_clip_norm": 1.0,
   "val_interval": 200,
   "eval_n_samples": 500,
-  "weight_decay": 1e-5,
-
+  "weight_decay": 1e-05,
   "data_root": "data/",
-  "molecules": ["ethanol"],
+  "molecules": [
+    "ethanol"
+  ],
   "max_atoms": 21,
   "noise_sigma": 0.05,
   "augment_train": true,
-  "normalize_to_unit_var": true,
-
   "wandb_project": "tnafmol",
   "wandb_group": "hyp_010",
-  "wandb_tags": ["hypothesis", "hyp_010", "OPTIMIZE", "sanity", "val"],
-  "wandb_notes": "Phase 2 T=21 retrain with sampling bug fix: padding latent zeroed before reverse pass. Hypothesis: prior 33% VF was caused by padding noise corrupting PermutationFlip autoregressive chain during sampling.",
-
-  "output_dir": "experiments/hypothesis/hyp_010_tarflow_apple_multimol"
+  "wandb_tags": [
+    "hypothesis",
+    "hyp_010",
+    "OPTIMIZE",
+    "sanity",
+    "val"
+  ],
+  "wandb_notes": "Phase 2 T=21 with BOTH fixes: (1) sampling fix (zero padding latent before reverse), (2) attention mask fix (causal only, no padding key masking). Tests whether PermutationFlip with T=21 can achieve VF >= 85%.",
+  "output_dir": "experiments/hypothesis/hyp_010_tarflow_apple_multimol",
+  "run_name_suffix": "phase2_T21_attnfix",
+  "normalize_to_unit_var": true,
+  "git_hash": "f8c9dc62",
+  "global_std": 0.9165909886360168,
+  "n_params": 6366296
 }
