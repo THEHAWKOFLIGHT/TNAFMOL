@@ -98,6 +98,7 @@ DEFAULT_CONFIG = {
     "max_atoms": 9,             # 9 for ethanol-only, 21 for multi-mol
     "noise_sigma": 0.05,        # Gaussian noise augmentation on real atoms
     "augment_train": True,      # SO(3) rotation + CoM noise
+    "permute_within_types": False,  # hyp_012: type-sort + within-group random perm (Arm B)
 
     # W&B
     "wandb_project": "tnafmol",
@@ -422,16 +423,20 @@ def train(cfg: dict):
     # Note: global_std normalization is applied inside MD17Dataset when global_std is provided.
     # The dataset divides positions by global_std in __init__.
     # So positions from the dataloader are already in normalized space.
+    permute_within_types = cfg.get("permute_within_types", False)
+    print(f"permute_within_types (Arm B): {permute_within_types}")
+
     train_ds = MultiMoleculeDataset(
         data_root,
         split="train",
         molecules=molecules,
         augment=augment_train,
         global_std=global_std,
-        permute=False,         # No permutation for Apple architecture (sequence-order matters)
+        permute=False,         # No full random permutation (use permute_within_types for Arm B)
         pad_token_idx=0,       # Standard H=0 for real atom types; 0 for padding is fine with TarFlow1DMol
         noise_sigma=noise_sigma,
         max_atoms=max_atoms,
+        permute_within_types=permute_within_types,
     )
     val_ds = MultiMoleculeDataset(
         data_root,
@@ -443,6 +448,7 @@ def train(cfg: dict):
         pad_token_idx=0,
         noise_sigma=0.0,       # No noise for validation
         max_atoms=max_atoms,
+        permute_within_types=False,  # No permutation augmentation for validation
     )
 
     print(f"Train size: {len(train_ds):,}, Val size: {len(val_ds):,}")
@@ -730,6 +736,8 @@ def main():
     parser.add_argument("--max-atoms", type=int, default=None)
     parser.add_argument("--use-padding-mask", action="store_true", default=None)
     parser.add_argument("--log-det-reg-weight", type=float, default=None)
+    parser.add_argument("--permute-within-types", action="store_true", default=None,
+                        help="Arm B: type-sort + within-group random permutation (hyp_012)")
     parser.add_argument("--channels", type=int, default=None)
     parser.add_argument("--num-blocks", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
@@ -775,6 +783,8 @@ def main():
         cfg["batch_size"] = args.batch_size
     if args.run_name_suffix is not None:
         cfg["run_name_suffix"] = args.run_name_suffix
+    if args.permute_within_types:
+        cfg["permute_within_types"] = True
 
     train(cfg)
 

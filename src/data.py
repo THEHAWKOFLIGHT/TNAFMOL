@@ -246,6 +246,100 @@ def permute_atoms(
 
 
 # =============================================================================
+# Type-sorted within-group permutation augmentation (hyp_012)
+# =============================================================================
+
+def permute_within_type_groups(
+    positions: torch.Tensor,
+    atom_types: torch.Tensor,
+    mask: torch.Tensor,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Type-sort then randomly permute within each atom type group. Padding stays at end.
+
+    This augmentation has two components:
+    1. TYPE SORT: atoms are reordered so all H (type 0) come first, then C (type 1),
+       then N (type 2), then O (type 3). This establishes a canonical inter-type ordering
+       that is consistent across samples, unlike the MD17 canonical frame which has
+       mixed orderings (e.g., aspirin: C C C C C C C O O O C C O H H H H H H H H).
+    2. WITHIN-GROUP PERMUTATION: within each type group, atoms are randomly shuffled
+       per sample. This teaches the model exchangeability of same-type atoms.
+
+    Key difference from permute_atoms(): that function does FULL random permutation,
+    mixing all atom types arbitrarily. This function maintains inter-type structure
+    (all H before all C before all N before all O) while randomizing intra-type order.
+
+    Motivation (hyp_012): TarFlow's autoregressive factorization conditions each atom
+    on all preceding atoms. A type-sorted ordering gives the model a consistent
+    structural context across samples — it always sees H atoms first, then heavier atoms.
+    Within-group permutation prevents overfitting to a fixed canonical order within
+    each chemically equivalent group.
+
+    Sanity checks:
+    - n_real <= 1: no reordering possible, return unchanged. CHECK.
+    - Padding atoms (mask=0) stay at end, untouched. CHECK.
+    - After reordering, atom_types of real atoms are sorted as H,H,...,C,C,...,N,N,...,O,O,...  CHECK.
+    - Total number of each atom type is preserved (permutation, not insertion/deletion). CHECK.
+    - positions and atom_types are reordered consistently. CHECK.
+    - mask is unchanged (same number of real/padding atoms). CHECK.
+    - Single atom of a type: randperm([0]) = [0], so no change within that group. CHECK.
+
+    Args:
+        positions: (N, 3) single sample positions — may include padding
+        atom_types: (N,) int atom type indices (0=H, 1=C, 2=N, 3=O; padding has higher idx)
+        mask: (N,) float — 1=real, 0=padding
+
+    Returns:
+        reordered positions, atom_types, mask (same shapes, mask unchanged)
+    """
+    n_real = int(mask.sum().item())
+    if n_real <= 1:
+        return positions, atom_types, mask
+
+    device = positions.device
+
+    # Work only on real-atom indices (first n_real positions)
+    real_positions = positions[:n_real]       # (n_real, 3)
+    real_atom_types = atom_types[:n_real]     # (n_real,)
+
+    # Build type-sorted + within-group-permuted ordering
+    # Type ordering: H(0) < C(1) < N(2) < O(3)
+    REAL_ATOM_TYPES = [0, 1, 2, 3]
+
+    new_order = []
+    for t in REAL_ATOM_TYPES:
+        # Find real atoms of this type
+        type_mask = (real_atom_types == t)
+        type_indices = torch.where(type_mask)[0]  # indices within real_atom_types
+        n_of_type = len(type_indices)
+        if n_of_type == 0:
+            continue
+        if n_of_type == 1:
+            # Only one atom of this type — no permutation needed
+            new_order.append(type_indices)
+        else:
+            # Randomly permute within this type group
+            perm = torch.randperm(n_of_type, device=device)
+            new_order.append(type_indices[perm])
+
+    if not new_order:
+        return positions, atom_types, mask
+
+    # Concatenate to get final ordering of real atoms
+    final_order = torch.cat(new_order)  # (n_real,) — new ordering of real-atom indices
+
+    # Apply reordering
+    positions_out = positions.clone()
+    atom_types_out = atom_types.clone()
+
+    positions_out[:n_real] = real_positions[final_order]
+    atom_types_out[:n_real] = real_atom_types[final_order]
+
+    # Padding stays at positions[n_real:] unchanged (already cloned)
+
+    return positions_out, atom_types_out, mask
+
+
+# =============================================================================
 # Gaussian coordinate noise (hyp_005)
 # =============================================================================
 
@@ -1014,6 +1108,10 @@ class MD17Dataset(torch.utils.data.Dataset):
         max_atoms: If provided, truncate positions, atom_types, and mask to this length
                    (hyp_007). Allows training with fewer padding slots than MAX_ATOMS=21.
                    Must be >= n_real_atoms for the molecule. Default None = use MAX_ATOMS.
+        permute_within_types: If True, type-sort atoms (H,C,N,O order) then randomly
+                   permute within each type group per sample (hyp_012). Mutually exclusive
+                   with permute (full random permutation). Applied at the same point as
+                   permute: after global_std normalization, before noise and SO(3) aug.
     """
 
     def __init__(
@@ -1026,6 +1124,7 @@ class MD17Dataset(torch.utils.data.Dataset):
         pad_token_idx: int = 0,
         noise_sigma: float = 0.0,
         max_atoms: Optional[int] = None,
+        permute_within_types: bool = False,
     ):
         assert split in ("train", "val", "test")
 
@@ -1051,6 +1150,12 @@ class MD17Dataset(torch.utils.data.Dataset):
         if global_std is not None and global_std > 0:
             positions = positions / global_std
 
+        assert not (permute and permute_within_types), (
+            "permute and permute_within_types are mutually exclusive: "
+            "permute does full random permutation (hyp_004), "
+            "permute_within_types does type-sorted within-group permutation (hyp_012)."
+        )
+
         self.positions = torch.from_numpy(positions)               # (N, max_atoms, 3)
         self.energies = torch.from_numpy(data["energies"][idx])    # (N,)
         self.mask = torch.from_numpy(mask_np)                      # (max_atoms,)
@@ -1058,6 +1163,7 @@ class MD17Dataset(torch.utils.data.Dataset):
         self.augment = augment
         self.global_std = global_std
         self.permute = permute
+        self.permute_within_types = permute_within_types
         self.pad_token_idx = pad_token_idx
         self.noise_sigma = noise_sigma
         self.effective_max_atoms = effective_max_atoms
@@ -1086,11 +1192,16 @@ class MD17Dataset(torch.utils.data.Dataset):
         # must clone before permutation to avoid corrupting other samples)
         atom_types = self.atom_types.clone()  # (max_atoms,)
 
-        # Apply permutation augmentation (hyp_004) — before noise and SO(3) augmentation
+        # Apply permutation augmentation — before noise and SO(3) augmentation
         # Note: global_std normalization is a scalar applied in __init__,
         # which commutes with permutation. Order is correct.
+        # Two mutually exclusive modes:
+        #   permute=True (hyp_004): full random permutation of all real atoms
+        #   permute_within_types=True (hyp_012): type-sort + within-group random permutation
         if self.permute:
             positions, atom_types, _ = permute_atoms(positions, atom_types, self.mask)
+        elif self.permute_within_types:
+            positions, atom_types, _ = permute_within_type_groups(positions, atom_types, self.mask)
 
         # Apply Gaussian coordinate noise (hyp_005) — on real atoms only, before SO(3) aug
         # sigma is in the NORMALIZED space (after global_std division if applicable)
@@ -1125,6 +1236,8 @@ class MultiMoleculeDataset(torch.utils.data.Dataset):
         pad_token_idx: padding atom type index (hyp_005, default 0 for backward compat)
         noise_sigma: per-coord Gaussian noise std on real atoms (hyp_005, default 0.0 = off)
         max_atoms: if provided, truncate all samples to this length (hyp_007, default None = MAX_ATOMS)
+        permute_within_types: if True, type-sort + within-group random permutation (hyp_012).
+            Mutually exclusive with permute.
     """
 
     def __init__(
@@ -1138,6 +1251,7 @@ class MultiMoleculeDataset(torch.utils.data.Dataset):
         pad_token_idx: int = 0,
         noise_sigma: float = 0.0,
         max_atoms: Optional[int] = None,
+        permute_within_types: bool = False,
     ):
         if molecules is None:
             molecules = list(MOLECULES.keys())
@@ -1155,7 +1269,7 @@ class MultiMoleculeDataset(torch.utils.data.Dataset):
             ds = MD17Dataset(
                 data_dir, split, augment=augment, global_std=global_std,
                 permute=permute, pad_token_idx=pad_token_idx, noise_sigma=noise_sigma,
-                max_atoms=max_atoms,
+                max_atoms=max_atoms, permute_within_types=permute_within_types,
             )
             self.datasets.append(ds)
             self.molecule_indices.extend([i] * len(ds))
