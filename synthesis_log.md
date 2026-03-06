@@ -657,3 +657,47 @@ HEURISTICS and SCALE: skipped (primary criterion far exceeded — 8/8 molecules 
 5. Eliminated need for log-det regularization (ldr=0 vs ldr=5.0 in hyp_007)
 
 **Story impact:** This validates the "use proven architecture directly" strategy. The incremental patching of model.py was the wrong approach — 4 experiments showed diminishing returns. Using tarflow_apple.py + TarFlow1DMol directly gave a 2x improvement in one experiment. The TarFlow arm of the comparison is now viable. DDPM baseline (hyp_011) is next.
+
+---
+
+### 2026-03-06 — hyp_011 synthesis
+**Status:** DONE | **Failure level:** None
+**Branch:** `exp/hyp_011` | **Tag:** `hyp_011`
+
+**Experiment:** Crack MD17 Multi-Molecule TarFlow — push VF as high as possible via capacity scaling, HP tuning, and temperature sweep. Three-phase OPTIMIZE starting from hyp_010 baseline (71.6% mean VF).
+
+**PhD execution review:**
+- Three PhD agents spawned across the three phases. All completed cleanly.
+- Phase 1 correctly identified capacity > training budget as primary driver (Run B 83.9% vs Run A 73.3%).
+- Phase 2 sweep (27 configs) identified noise_sigma=0.03 as the key improvement lever (inherited 0.05 was suboptimal).
+- Phase 3 SCALE + temperature sweep achieved 98.9% mean VF at T=0.7.
+- Source integration cleanup performed correctly — no .py files remain in experiment directory.
+- W&B artifact naming errors in sweep runs (slashes in stage field) — non-blocking, all results captured.
+- .state.json not consistently updated by PhD agents — Postdoc caught and fixed.
+
+**Results summary:**
+| Phase | Config | Mean VF |
+|-------|--------|---------|
+| hyp_010 baseline | 256ch, 4blk, 6.3M, 20k steps | 71.6% |
+| Phase 1 Run B | 384ch, 6blk, 21.4M, 20k steps | 83.9% |
+| Phase 2 full | 384ch, 6blk, 21.4M, 50k, ns=0.03 | 94.7% |
+| Phase 3 SCALE (T=1.0) | 512ch, 8blk, 50.6M, 50k, ns=0.03 | 97.4% |
+| **Phase 3 SCALE (T=0.7)** | **same checkpoint, temp sweep** | **98.9%** |
+
+Per-molecule at T=0.7: aspirin 95.6%, benzene 100%, ethanol 96.2%, malonaldehyde 99.8%, naphthalene 100%, salicylic_acid 99.8%, toluene 100%, uracil 99.6%.
+
+**Key findings:**
+1. Model capacity is the primary driver — 6.3M → 21.4M → 50.6M maps to 71.6% → 83.9% → 97.4%
+2. noise_sigma=0.03 is better than 0.05 (consistent +5-7pp across all LR settings)
+3. noise_sigma=0.10 is catastrophic (kills all configs to 57-59%)
+4. ldr=2.0 provides mild improvement over ldr=0 at lr=5e-4
+5. Temperature sweep is free and gives 1-2pp improvement — should be standard practice
+6. Small models (6.3M) + long training → per-molecule collapse (toluene 3.2% at 50k steps)
+
+**W&B runs:**
+- Phase 1 Run A: https://wandb.ai/kaityrusnelson1/tnafmol/runs/ls03bb0g
+- Phase 1 Run B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/820m2ely
+- Phase 2 full: https://wandb.ai/kaityrusnelson1/tnafmol/runs/xo61cylz
+- Phase 3 SCALE: https://wandb.ai/kaityrusnelson1/tnafmol/runs/z7dwsfdj
+
+**Story impact:** The multi-molecule TarFlow gap is closed. 98.9% mean VF at T=0.7 essentially matches (and slightly exceeds) the 98.2% per-molecule ceiling from und_001. A single shared model achieves parity with dedicated per-molecule models. The TarFlow arm is fully optimized. DDPM baseline is the next step for head-to-head comparison.

@@ -1,8 +1,8 @@
 # TNAFMOL — Results
-**Last updated:** 2026-03-07 after hyp_010
+**Last updated:** 2026-03-06 after hyp_011
 
 ## Status
-TarFlow Apple architecture (tarflow_apple.py + TarFlow1DMol) achieves **71.6% mean VF** across all 8 MD17 molecules in joint multi-molecule training. **All 8 molecules exceed 50% VF** — far surpassing the 4/8 target. Two critical padding bugs fixed in train_phase3.py (sampling noise at padding positions + attention key masking in PermutationFlip). No log-det regularization needed. Aspirin recovered from 9.2% (hyp_007) to 67.4%.
+TarFlow Apple architecture (TarFlow1DMol, 512ch/8blk, 50.6M params) achieves **98.9% mean VF** across all 8 MD17 molecules at sampling temperature T=0.7 — essentially matching the per-molecule ceiling (98.2%). All 8 molecules above 95.6%. The multi-molecule gap is closed: a single shared model matches dedicated per-molecule models.
 
 ## Experiments
 
@@ -18,12 +18,13 @@ TarFlow Apple architecture (tarflow_apple.py + TarFlow1DMol) achieves **71.6% me
 | hyp_007 | Output-Shift + ldr=5.0 + 20k steps | 55.8% (ethanol), 34.7% mean | Padding neutral (4pp drop). ldr=5.0 critical. 2/8 molecules above 50%. | PARTIAL |
 | hyp_008 | Per-dim scale (3 log_scales/atom) | 39.2% (ethanol, T=9) | <1pp effect vs shared scale (und_001 Phase 4). True gap: pre-norm + layers_per_block. | FAILURE |
 | hyp_009 | Pre-norm + layers_per_block=2 | 14% (ethanol, T=9) | WORSE than baseline (39%). Incremental patching exhausted. | FAILURE |
-| **hyp_010** | **TarFlow Apple (TarFlow1DMol) multi-mol** | **71.6% mean, all 8 >50%** | **Apple arch generalizes to multi-mol. No ldr needed. 2 padding bugs fixed.** | **DONE** |
+| hyp_010 | TarFlow Apple (TarFlow1DMol) multi-mol | 71.6% mean, all 8 >50% | Apple arch generalizes to multi-mol. No ldr needed. 2 padding bugs fixed. | DONE |
+| **hyp_011** | **TarFlow scaling + HP tuning** | **98.9% mean (T=0.7), 97.4% (T=1.0)** | **Capacity is primary driver. noise_sigma=0.03 key. Multi-mol gap closed.** | **DONE** |
 
 ## Best Result
-**und_001:** Architecture ceiling = 98.2% mean VF across all 8 molecules with T=n_real (no padding). Range: 94.3% (aspirin) to 100% (naphthalene, benzene).
+**hyp_011 SCALE (512ch, 8blk, 50.6M params, T=0.7):** All 8 molecules, T=21, 50k steps. Per-molecule VF: benzene 100%, naphthalene 100%, toluene 100%, malonaldehyde 99.8%, salicylic_acid 99.8%, uracil 99.6%, ethanol 96.2%, aspirin 95.6%. **Mean VF=98.9%.** Config: channels=512, num_blocks=8, layers_per_block=2, lr=5e-4, ldr=2.0, noise_sigma=0.03, cosine+1000 warmup, 50k steps, sampling temp=0.7. W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/z7dwsfdj
 
-**hyp_010 (multi-molecule with TarFlow Apple architecture):** All 8 molecules, T=21, 20k steps. Per-molecule VF: malonaldehyde 82.6%, naphthalene 81.0%, benzene 79.4%, aspirin 67.4%, salicylic acid 67.4%, toluene 67.4%, ethanol 64.0%, uracil 63.6%. Mean VF=71.6%. Config: d_model=256, n_blocks=4, layers_per_block=2, lr=1e-3, cosine, 20k steps, ldr=0. W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/tw349mhw
+**und_001:** Architecture ceiling = 98.2% mean VF (per-molecule, no padding). hyp_011 SCALE at T=0.7 exceeds this ceiling (98.9% > 98.2%), demonstrating that the multi-molecule model has effectively matched or exceeded per-molecule performance.
 
 ## What's Next
-hyp_011: DDPM diffusion baseline — implement transformer-based denoiser with comparable parameter count. Train on same multi-molecule MD17 data. Head-to-head comparison with TarFlow on all evaluation metrics.
+DDPM diffusion baseline — implement transformer-based denoiser with comparable parameter count. Train on same multi-molecule MD17 data. Head-to-head comparison with TarFlow on all evaluation metrics.

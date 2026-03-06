@@ -122,3 +122,14 @@ Append-only log. One entry per experiment.
 **Failure modes:** Source integration incomplete (Level 1 — .py files not removed in PhD's integration commit, Postdoc caught and fixed).
 **Story fit:** FITS — proves Apple TarFlow architecture generalizes to multi-molecule training. Eliminates need for log-det regularization. Resolves the aspirin outlier from hyp_007.
 **Concerns:** Benzene PW divergence high (0.17 vs ~0.04) — likely C6 symmetry ambiguity, not structural failure (VF=79.4%). Ethanol VF lower in multi-mol (64%) vs single-mol (93.6%) — expected from multi-task capacity sharing.
+
+---
+
+### hyp_011 — Crack MD17 Multi-Molecule TarFlow
+**Date:** 2026-03-06 | **Status:** DONE
+**Tag:** `hyp_011` | **Merge commit:** `(see git log)`
+**Result:** Three-phase OPTIMIZE closed the multi-molecule gap from 71.6% to 98.9% mean VF. Phase 1 SANITY: capacity > budget (384ch/6blk → 83.9% vs 256ch/4blk at 50k → 73.3% with toluene collapse). Phase 2 HEURISTICS: 27-config sweep found noise_sigma=0.03 + ldr=2.0 as key levers; full run at 50k steps → 94.7%. Phase 3 SCALE: 512ch/8blk (50.6M params) → 97.4% at T=1.0, 98.9% at T=0.7. All 8 molecules above 95.6%. Gap to per-molecule ceiling (98.2%) effectively closed.
+**PhD quality:** CLEAN — three PhD agents across phases, all completed successfully. 27-sweep sweep had W&B artifact naming errors (non-blocking). Source integration cleanup done.
+**Failure modes:** None
+**Story fit:** FITS — confirms multi-molecule TarFlow can match per-molecule performance with sufficient capacity and tuning. Single shared model achieves parity with dedicated per-molecule models.
+**Concerns:** None — result exceeds stretch target (90%). Temperature sweep is a free 1-2pp improvement that should be standard practice.
