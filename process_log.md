@@ -4,6 +4,46 @@ PhD student-maintained. Append-only decisions, reasoning, file manifest.
 
 ---
 
+## 2026-03-06 — hyp_011: Phase 2 HEURISTICS Sweep
+**Branch:** `exp/hyp_011`
+
+### Decisions & Reasoning
+- Phase 1 winner: Run B (384ch, 6blk, lr=5e-4, 20k steps) at 83.9% mean VF
+- Phase 2 sweeps lr/ldr/noise_sigma to push beyond 83.9% toward the 86% promising criterion
+- Sweep grid: lr={1e-4,3e-4,5e-4} x ldr={0.0,2.0,5.0} x noise_sigma={0.03,0.05,0.1} = 27 configs
+- n_steps=20000 fixed (same as Run B — sweep isolates HP sensitivity, not training budget)
+- Literature justification for ldr sweep: log-det regularization from hyp_007 (internal precedent showing it was critical for stabilization in model.py TarFlow). Rationale: even though Run B doesn't need it at 83.9%, moderate ldr (2.0) may improve training stability for diverse molecules.
+- Literature justification for noise_sigma sweep: data augmentation noise controls the manifold smoothing; Jing et al. (2022, "Torsional Diffusion") shows noise scale critically affects conformational coverage.
+- stage field set to "sweep/runs/run_XX_descriptor" per run → each run gets a unique output subdirectory. This avoids directory collisions while keeping angle="heuristics".
+- 6 GPUs (0,3,4,5,6,7) on localhost, batches of 6, ~31 min/batch, ~3 hours total.
+
+INTENTION (write-before-execute):
+1. Generate 27 config JSON files in config/sweep/
+2. Write run_sweep.sh bash script for sequential batching across 6 GPUs
+3. Commit pre-run snapshot
+4. Launch sweep as nohup background process
+5. Collect mol_results.pt from each run directory after completion
+6. Rank by mean VF, identify best config
+7. If best > 86%: run full training at best config
+8. Commit results and write milestone sub-report
+
+### New Files Created
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/config/sweep/` — 27 sweep config JSON files
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/run_sweep.sh` — sweep launch script
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/heuristics/sweep/logs/` — per-run stdout logs
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/heuristics/sweep/runs/` — per-run output directories (created by train_apple.py at runtime)
+- `collect_sweep_results.py` — result collection and ranking script (project root)
+
+### Commits
+- `157e1ba` — [hyp_011] config: pre-run snapshot for Phase 2 HEURISTICS sweep
+
+### Notes
+- Sweep launched at 02:34 AM (local time)
+- Expected completion: ~05:45 AM (3 hours for 5 batches x 31 min)
+- Monitor: tail -f experiments/hypothesis/hyp_011_crack_md17_multimol/angles/heuristics/sweep/logs/sweep_master.log
+
+---
+
 ## 2026-03-06 — hyp_011: Phase 1 SANITY validation runs
 **Branch:** `exp/hyp_011`
 
