@@ -459,3 +459,85 @@ even if they don't resolve the VF gap alone.
 **Story fit:** UPDATES STORY. The root cause is architectural (pre-norm, layers_per_block),
 not scale parameterization. Next experiment should implement pre-norm + layers_per_block in
 model.py and retest single-molecule VF.
+
+---
+
+## hyp_009 — Pre-Norm + Layers Per Block Architectural Alignment
+**Date:** 2026-03-05 | **Branch:** `exp/hyp_009` | **Status:** FAILURE (primary criterion not met)
+
+**Hypothesis:** The 56pp VF gap between model.py (TarFlow) and tarflow_apple.py (TarFlow1DMol) is caused
+by: (1) post-norm vs pre-norm in attention/FFN layers, (2) 1 attention+FFN layer per block vs 2 layers per
+block, (3) dropout=0.1 vs 0.0. Implementing all three should close the gap to within 5pp.
+
+**Implementation:** Added `use_pre_norm` (bool, default False) and `layers_per_block` (int, default 1)
+to TarFlowBlock and TarFlow. nn.ModuleList of layers per block. Pre-norm path: LayerNorm before each
+sublayer, final_norm after all sublayers. Backward compatible defaults. All 6 unit tests passed.
+
+**Phase 1 Investigation (single-molecule ethanol, T=9, no padding, cuda:8/9):**
+
+| Config | ldr | VF | log_det/dof | W&B |
+|--------|-----|----|-------------|-----|
+| pre-norm + lpb=2, ldr=0 | 0.0 | 14.4% | 1.5+ exploded | — |
+| pre-norm + lpb=2, ldr=5 | 5.0 | 28.4% | 0.09 stable | — |
+| post-norm + lpb=1, ldr=5 (baseline) | 5.0 | 29.8% | 0.09 stable | — |
+| pre-norm + lpb=2, ldr=1.0 | 1.0 | 34.0% | partial exploitation | — |
+| contraction-only (alpha_pos=0.001, ldr=0) | 0.0 | TBD | — | — |
+
+**Phase 1 gate: VF >= 90%. Best achieved: 34.0% (pre-norm, ldr=1.0). FAILED.**
+
+**Key Finding:**
+Pre-norm vs post-norm: 1.4pp difference (29.8% vs 28.4%). Not the bottleneck.
+Root cause reanalyzed: affine convention. Our convention (y = exp(log_scale)*x + shift) expands
+in forward pass — logdet positive → reduces NLL. Apple's convention (z = exp(-xa)*(x-xb)) contracts
+in forward → logdet negative → increases NLL. This means our model can trivially reduce loss by
+expanding log_scale, independent of learning the distribution.
+
+With ldr=5.0: logdet is over-regularized → model learns nothing useful beyond ~28-34% VF.
+With ldr=0.0: model exploits log_det to explosion.
+There is no working middle ground with the current affine convention.
+
+**Decision:** Escalate to Postdoc. Phase 1 failed. True root cause is affine convention, not normalization.
+Next step: use tarflow_apple.py (TarFlow1DMol) end-to-end — it has the correct contraction convention.
+
+**Story fit:** UPDATES STORY. The architectural alignment of model.py is insufficient. The contraction
+vs expansion convention is the dominant factor. Switch to train_phase3.py/tarflow_apple.py directly
+for future multi-molecule work (hyp_010).
+
+---
+
+## hyp_010 — TarFlow Apple Multi-Molecule (in progress)
+**Date:** 2026-03-05 | **Branch:** `exp/hyp_010` | **Status:** IN_PROGRESS
+
+**Hypothesis:** TarFlow1DMol from tarflow_apple.py (correct contraction convention) achieves >= 90%
+VF on single molecules. With the correct padding implementation (seq_length=21, use_padding_mask=True),
+it can generalize to multi-molecule training with mean VF > 40%.
+
+**Phase 1 — Ethanol T=9 Sanity Gate:** PASSED
+- VF = 95% on ethanol T=9, 5k steps. Reproduces und_001 Phase 4 (96.2%).
+- Key fix: use FINAL checkpoint (not val-loss-best) — logdet exploitation makes val_loss diverge,
+  but final checkpoint still generates from the correct distribution.
+
+**Phase 2 — T=21 Padding Validation:** PASSED
+- Two bugs found and fixed in src/train_phase3.py:
+
+  Bug 1 (sampling): z = randn(n, T=21, 3) filled ALL positions including padding with Gaussian noise.
+  In PermutationFlip blocks, padding positions 9-20 appear first (0-11 in permuted space), corrupting
+  the autoregressive chain. Fix: zero padding positions in z before reverse(), re-zero between blocks.
+  Result: VF improved from 33% to 47.2%.
+
+  Bug 2 (attention): MetaBlockWithCond applied padding KEY masking on top of causal mask. In PermutationFlip,
+  padding appears first → all keys 0-11 masked → position 11 (last padding before first real atom) sees
+  NO valid context → produces degenerate affine params for position 12 (first real atom). Fix: use causal
+  mask ONLY; no key masking. Padding isolation maintained separately by zeroing xa, xb after transformer.
+  Result: VF jumped from 47.2% to 93.6%.
+
+- T=9 VF=95%, T=21 VF=93.6%, gap=1.4pp. Phase 2 PASSED (criterion: gap < 10pp, both >= 85%).
+
+**Phase 3 — Multi-molecule OPTIMIZE:**
+- 8 molecules at T=21, 20k steps via Slurm (SLURM_JOB_ID=4157 on escher).
+- W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/tw349mhw
+- Config: channels=256, num_blocks=4, layers_per_block=2, lr=5e-4 cosine, batch_size=256.
+- Status: RUNNING at step ~11500/20000 as of 2026-03-05.
+- Intermediate observations: logdets stabilizing ~1.87, val_loss trending down from peak (3.24 at step 10500,
+  2.96 at step 11000) — consistent with successful T=21 single-molecule run pattern.
+- Success criterion: VF > 50% ethanol AND mean VF > 40% (to be evaluated on final checkpoint).
