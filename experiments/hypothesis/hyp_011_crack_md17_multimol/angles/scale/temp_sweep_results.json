@@ -1,0 +1,314 @@
+{
+  "0.7": {
+    "temperature": 0.7,
+    "mean_vf": 0.9515,
+    "molecules": {
+      "aspirin": {
+        "valid_fraction": 0.934,
+        "pairwise_dist_divergence": 0.0030238833537529026,
+        "min_dist_mean": 0.9358620599508286,
+        "min_dist_below_08": 0.066,
+        "n_samples": 500
+      },
+      "benzene": {
+        "valid_fraction": 1.0,
+        "pairwise_dist_divergence": 0.013466641603778976,
+        "min_dist_mean": 1.0300294219255448,
+        "min_dist_below_08": 0.0,
+        "n_samples": 500
+      },
+      "ethanol": {
+        "valid_fraction": 0.708,
+        "pairwise_dist_divergence": 0.01025574868335953,
+        "min_dist_mean": 0.8412486339211463,
+        "min_dist_below_08": 0.292,
+        "n_samples": 500
+      },
+      "malonaldehyde": {
+        "valid_fraction": 1.0,
+        "pairwise_dist_divergence": 0.003953450654878115,
+        "min_dist_mean": 1.0560492037534714,
+        "min_dist_below_08": 0.0,
+        "n_samples": 500
+      },
+      "naphthalene": {
+        "valid_fraction": 1.0,
+        "pairwise_dist_divergence": 0.005015111607198828,
+        "min_dist_mean": 1.0084206700325011,
+        "min_dist_below_08": 0.0,
+        "n_samples": 500
+      },
+      "salicylic_acid": {
+        "valid_fraction": 0.978,
+        "pairwise_dist_divergence": 0.0030691987610705733,
+        "min_dist_mean": 0.9263424059152603,
+        "min_dist_below_08": 0.022,
+        "n_samples": 500
+      },
+      "toluene": {
+        "valid_fraction": 0.996,
+        "pairwise_dist_divergence": 0.004192072400015998,
+        "min_dist_mean": 1.0110483403205872,
+        "min_dist_below_08": 0.004,
+        "n_samples": 500
+      },
+      "uracil": {
+        "valid_fraction": 0.996,
+        "pairwise_dist_divergence": 0.0054063115930176875,
+        "min_dist_mean": 0.9765426488518715,
+        "min_dist_below_08": 0.004,
+        "n_samples": 500
+      }
+    }
+  },
+  "0.8": {
+    "temperature": 0.8,
+    "mean_vf": 0.9590000000000001,
+    "molecules": {
+      "aspirin": {
+        "valid_fraction": 0.948,
+        "pairwise_dist_divergence": 0.004313825060481261,
+        "min_dist_mean": 0.934054013594985,
+        "min_dist_below_08": 0.052,
+        "n_samples": 500
+      },
+      "benzene": {
+        "valid_fraction": 1.0,
+        "pairwise_dist_divergence": 0.0239820473954618,
+        "min_dist_mean": 1.023923085808754,
+        "min_dist_below_08": 0.0,
+        "n_samples": 500
+      },
+      "ethanol": {
+        "valid_fraction": 0.782,
+        "pairwise_dist_divergence": 0.008846179935179138,
+        "min_dist_mean": 0.8695132794380188,
+        "min_dist_below_08": 0.218,
+        "n_samples": 500
+      },
+      "malonaldehyde": {
+        "valid_fraction": 0.994,
+        "pairwise_dist_divergence": 0.005600950707574199,
+        "min_dist_mean": 1.0476818478107452,
+        "min_dist_below_08": 0.006,
+        "n_samples": 500
+      },
+      "naphthalene": {
+        "valid_fraction": 1.0,
+        "pairwise_dist_divergence": 0.009832089613056469,
+        "min_dist_mean": 0.9960194165706635,
+        "min_dist_below_08": 0.0,
+        "n_samples": 500
+      },
+      "salicylic_acid": {
+        "valid_fraction": 0.962,
+        "pairwise_dist_divergence": 0.004611465878689811,
+        "min_dist_mean": 0.9204275490045547,
+        "min_dist_below_08": 0.038,
+        "n_samples": 500
+      },
+      "toluene": {
+        "valid_fraction": 0.996,
+        "pairwise_dist_divergence": 0.006942328085635802,
+        "min_dist_mean": 1.005541909456253,
+        "min_dist_below_08": 0.004,
+        "n_samples": 500
+      },
+      "uracil": {
+        "valid_fraction": 0.99,
+        "pairwise_dist_divergence": 0.008761347999141578,
+        "min_dist_mean": 0.9660608724355698,
+        "min_dist_below_08": 0.01,
+        "n_samples": 500
+      }
+    }
+  },
+  "0.9": {
+    "temperature": 0.9,
+    "mean_vf": 0.9492499999999999,
+    "molecules": {
+      "aspirin": {
+        "valid_fraction": 0.902,
+        "pairwise_dist_divergence": 0.0058337229288724,
+        "min_dist_mean": 0.92207640427351,
+        "min_dist_below_08": 0.098,
+        "n_samples": 500
+      },
+      "benzene": {
+        "valid_fraction": 1.0,
+        "pairwise_dist_divergence": 0.03898596628325656,
+        "min_dist_mean": 1.0125904511213302,
+        "min_dist_below_08": 0.0,
+        "n_samples": 500
+      },
+      "ethanol": {
+        "valid_fraction": 0.772,
+        "pairwise_dist_divergence": 0.01069549407239538,
+        "min_dist_mean": 0.8716299414038658,
+        "min_dist_below_08": 0.228,
+        "n_samples": 500
+      },
+      "malonaldehyde": {
+        "valid_fraction": 0.998,
+        "pairwise_dist_divergence": 0.008061448501800392,
+        "min_dist_mean": 1.041091050505638,
+        "min_dist_below_08": 0.002,
+        "n_samples": 500
+      },
+      "naphthalene": {
+        "valid_fraction": 0.998,
+        "pairwise_dist_divergence": 0.01509999899940239,
+        "min_dist_mean": 0.9839189627170563,
+        "min_dist_below_08": 0.002,
+        "n_samples": 500
+      },
+      "salicylic_acid": {
+        "valid_fraction": 0.944,
+        "pairwise_dist_divergence": 0.006817020788781437,
+        "min_dist_mean": 0.9189998339414597,
+        "min_dist_below_08": 0.056,
+        "n_samples": 500
+      },
+      "toluene": {
+        "valid_fraction": 0.998,
+        "pairwise_dist_divergence": 0.011694131423862159,
+        "min_dist_mean": 0.9978076524734497,
+        "min_dist_below_08": 0.002,
+        "n_samples": 500
+      },
+      "uracil": {
+        "valid_fraction": 0.982,
+        "pairwise_dist_divergence": 0.01162233243492479,
+        "min_dist_mean": 0.9620384167432785,
+        "min_dist_below_08": 0.018,
+        "n_samples": 500
+      }
+    }
+  },
+  "0.95": {
+    "temperature": 0.95,
+    "mean_vf": 0.952,
+    "molecules": {
+      "aspirin": {
+        "valid_fraction": 0.886,
+        "pairwise_dist_divergence": 0.007108170419040062,
+        "min_dist_mean": 0.9082307842969894,
+        "min_dist_below_08": 0.114,
+        "n_samples": 500
+      },
+      "benzene": {
+        "valid_fraction": 1.0,
+        "pairwise_dist_divergence": 0.04679549853313163,
+        "min_dist_mean": 1.0103192856311798,
+        "min_dist_below_08": 0.0,
+        "n_samples": 500
+      },
+      "ethanol": {
+        "valid_fraction": 0.824,
+        "pairwise_dist_divergence": 0.010256979615080805,
+        "min_dist_mean": 0.8903281013369561,
+        "min_dist_below_08": 0.176,
+        "n_samples": 500
+      },
+      "malonaldehyde": {
+        "valid_fraction": 0.996,
+        "pairwise_dist_divergence": 0.009263776416158774,
+        "min_dist_mean": 1.0374974684119225,
+        "min_dist_below_08": 0.004,
+        "n_samples": 500
+      },
+      "naphthalene": {
+        "valid_fraction": 0.998,
+        "pairwise_dist_divergence": 0.019512781985059,
+        "min_dist_mean": 0.9817326641082764,
+        "min_dist_below_08": 0.002,
+        "n_samples": 500
+      },
+      "salicylic_acid": {
+        "valid_fraction": 0.948,
+        "pairwise_dist_divergence": 0.00812164392170557,
+        "min_dist_mean": 0.9167672554254532,
+        "min_dist_below_08": 0.052,
+        "n_samples": 500
+      },
+      "toluene": {
+        "valid_fraction": 0.994,
+        "pairwise_dist_divergence": 0.013897783147560322,
+        "min_dist_mean": 0.9901993476748466,
+        "min_dist_below_08": 0.006,
+        "n_samples": 500
+      },
+      "uracil": {
+        "valid_fraction": 0.97,
+        "pairwise_dist_divergence": 0.012077491539680567,
+        "min_dist_mean": 0.9580208176374435,
+        "min_dist_below_08": 0.03,
+        "n_samples": 500
+      }
+    }
+  },
+  "1.0": {
+    "temperature": 1.0,
+    "mean_vf": 0.94425,
+    "molecules": {
+      "aspirin": {
+        "valid_fraction": 0.87,
+        "pairwise_dist_divergence": 0.007816233697932197,
+        "min_dist_mean": 0.9036181049942971,
+        "min_dist_below_08": 0.13,
+        "n_samples": 500
+      },
+      "benzene": {
+        "valid_fraction": 1.0,
+        "pairwise_dist_divergence": 0.05304493314007783,
+        "min_dist_mean": 1.0088601499795913,
+        "min_dist_below_08": 0.0,
+        "n_samples": 500
+      },
+      "ethanol": {
+        "valid_fraction": 0.806,
+        "pairwise_dist_divergence": 0.012332188918603083,
+        "min_dist_mean": 0.8838483002781868,
+        "min_dist_below_08": 0.194,
+        "n_samples": 500
+      },
+      "malonaldehyde": {
+        "valid_fraction": 0.992,
+        "pairwise_dist_divergence": 0.011323196539254912,
+        "min_dist_mean": 1.031900061428547,
+        "min_dist_below_08": 0.008,
+        "n_samples": 500
+      },
+      "naphthalene": {
+        "valid_fraction": 0.996,
+        "pairwise_dist_divergence": 0.02222171682626603,
+        "min_dist_mean": 0.9791672612428666,
+        "min_dist_below_08": 0.004,
+        "n_samples": 500
+      },
+      "salicylic_acid": {
+        "valid_fraction": 0.944,
+        "pairwise_dist_divergence": 0.008755495080994252,
+        "min_dist_mean": 0.9147301669120789,
+        "min_dist_below_08": 0.056,
+        "n_samples": 500
+      },
+      "toluene": {
+        "valid_fraction": 0.998,
+        "pairwise_dist_divergence": 0.016148691861454813,
+        "min_dist_mean": 0.9882575743794442,
+        "min_dist_below_08": 0.002,
+        "n_samples": 500
+      },
+      "uracil": {
+        "valid_fraction": 0.948,
+        "pairwise_dist_divergence": 0.015958632694767168,
+        "min_dist_mean": 0.9452578841745853,
+        "min_dist_below_08": 0.052,
+        "n_samples": 500
+      }
+    }
+  },
+  "best_temperature": 0.8,
+  "best_mean_vf": 0.9590000000000001
+}

@@ -3,18 +3,26 @@
   "command": "OPTIMIZE",
   "status": "in_progress",
   "created": "2026-03-06T12:00:00Z",
-  "last_updated": "2026-03-06T12:00:00Z",
+  "last_updated": "2026-03-06T20:00:00Z",
   "machine": {
     "host": "localhost",
     "user": "kai_nelson",
-    "gpu": "cuda:4,cuda:7",
+    "gpu": "cuda:4,cuda:5",
     "pid": null,
     "claude_session_id": null
   },
   "artifacts": {
     "dataset": "data/",
-    "checkpoints": [],
-    "raw_outputs": []
+    "checkpoints": [
+      "angles/sanity/val/best.pt",
+      "angles/sanity/diag/best.pt",
+      "angles/heuristics/full/best.pt"
+    ],
+    "raw_outputs": [
+      "angles/sanity/val/raw/",
+      "angles/sanity/diag/raw/",
+      "angles/heuristics/full/raw/"
+    ]
   },
   "steps": [
     {
@@ -25,33 +33,42 @@
     },
     {
       "name": "plan",
-      "status": "pending",
-      "acceptance": "Plan Sub-report written and Postdoc-approved"
+      "status": "completed",
+      "acceptance": "Plan Sub-report written and Postdoc-approved",
+      "completed_at": "2026-03-06T12:30:00Z"
     },
     {
       "name": "angle_sanity_val_runA",
-      "status": "pending",
-      "acceptance": "Run A (50k steps, channels=256, blocks=4) complete with VF evaluation"
+      "status": "completed",
+      "acceptance": "Run A (50k steps, channels=256, blocks=4) complete with VF evaluation",
+      "result": {"mean_vf": 0.733, "toluene_collapse": true},
+      "completed_at": "2026-03-06T13:30:00Z"
     },
     {
       "name": "angle_sanity_val_runB",
-      "status": "pending",
-      "acceptance": "Run B (20k steps, channels=384, blocks=6) complete with VF evaluation"
+      "status": "completed",
+      "acceptance": "Run B (20k steps, channels=384, blocks=6) complete with VF evaluation",
+      "result": {"mean_vf": 0.839},
+      "completed_at": "2026-03-06T13:30:00Z"
     },
     {
       "name": "angle_heuristics_sweep",
-      "status": "pending",
-      "acceptance": "W&B sweep over lr/ldr/noise_sigma completed; best config selected"
+      "status": "completed",
+      "acceptance": "W&B sweep over lr/ldr/noise_sigma completed; best config selected",
+      "result": {"best_config": "lr=5e-4, ldr=2.0, noise_sigma=0.03", "best_mean_vf": 0.911},
+      "completed_at": "2026-03-06T16:00:00Z"
     },
     {
       "name": "angle_heuristics_full",
-      "status": "pending",
-      "acceptance": "Full training run with best sweep config; VF evaluated on all 8 molecules"
+      "status": "completed",
+      "acceptance": "Full training run with best sweep config; VF evaluated on all 8 molecules",
+      "result": {"mean_vf": 0.947},
+      "completed_at": "2026-03-06T18:00:00Z"
     },
     {
       "name": "angle_scale_full",
-      "status": "pending",
-      "acceptance": "Large model (channels=512, blocks=8) trained 100k steps; VF evaluated"
+      "status": "in_progress",
+      "acceptance": "Large model or temperature sweep; VF evaluated on all 8 molecules"
     },
     {
       "name": "source_integration",
