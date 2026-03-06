@@ -1,0 +1,71 @@
+{
+  "exp_id": "hyp_012",
+  "command": "OPTIMIZE",
+  "status": "in_progress",
+  "created": "2026-03-06T00:00:00Z",
+  "last_updated": "2026-03-06T00:00:00Z",
+  "machine": {
+    "host": "localhost",
+    "user": "kai_nelson",
+    "gpu": "cuda:3-7",
+    "pid": null,
+    "claude_session_id": null
+  },
+  "artifacts": {
+    "dataset": "data/",
+    "checkpoints": [],
+    "raw_outputs": []
+  },
+  "steps": [
+    {
+      "name": "diagnostic",
+      "status": "pending",
+      "acceptance": "Diagnostic Report written to reports/diagnostic_report.md with baseline analysis and root cause"
+    },
+    {
+      "name": "plan",
+      "status": "pending",
+      "acceptance": "Plan Sub-report written to reports/plan_report.md and approved by Postdoc"
+    },
+    {
+      "name": "implement_permute_within_types",
+      "status": "pending",
+      "acceptance": "permute_within_type_groups() implemented in src/data.py, permute_within_types config flag in MultiMoleculeDataset/MD17Dataset, CLI arg in train_apple.py"
+    },
+    {
+      "name": "arm_a_sanity_val",
+      "status": "pending",
+      "acceptance": "Arm A SANITY validation run complete; VF and loss reported"
+    },
+    {
+      "name": "arm_b_sanity_val",
+      "status": "pending",
+      "acceptance": "Arm B SANITY validation run complete; VF and loss reported"
+    },
+    {
+      "name": "arm_a_optimize",
+      "status": "pending",
+      "acceptance": "Arm A OPTIMIZE completed through all applicable angles; best VF at T=1.0 reported"
+    },
+    {
+      "name": "arm_b_optimize",
+      "status": "pending",
+      "acceptance": "Arm B OPTIMIZE completed through all applicable angles; best VF at T=1.0 reported"
+    },
+    {
+      "name": "comparison_analysis",
+      "status": "pending",
+      "acceptance": "Head-to-head comparison plots and per-molecule breakdown generated"
+    },
+    {
+      "name": "source_integration",
+      "status": "pending",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice"
+    },
+    {
+      "name": "merge_and_tag",
+      "status": "pending",
+      "acceptance": "Merged to main with tag hyp_012; pre-merge checks pass"
+    }
+  ]
+}
