@@ -1444,3 +1444,81 @@ INTENTION (write-before-execute): Run contraction-only test on cuda:9
 - `experiments/hypothesis/hyp_009_arch_alignment/run_diag2.py`
 
 ### Commits
+- `9a8a450` — [hyp_009] code: pre-norm + layers_per_block implementation
+- `cee25bd` — [hyp_009] config: diagnostic investigation configs for Phase 1 failure
+- `1a4515b` — [hyp_009] config: contraction-only diagnostic (alpha_pos=0.001, ldr=0.0)
+
+---
+
+## 2026-03-05 — hyp_010: TarFlow Apple Multi-Molecule
+**Branch:** `exp/hyp_010`
+
+### Decisions & Reasoning
+
+**Phase 1 — Ethanol T=9 Sanity Gate (prior context):**
+- Goal: reproduce und_001 Phase 4 config 2 (tarflow_apple.py, T=9, noise) = 96.2% VF
+- Used `src/train_phase3.py` TarFlow1DMol, `src/train_apple.py` training loop
+- Key finding from prior context: checkpoint selection bug — val-best checkpoint gave low VF because of log-det exploitation; FINAL checkpoint gives best VF (matching und_001 Phase 3 convention)
+- Phase 1 result: VF = 95.0% on ethanol T=9. Gate PASSED.
+
+**Phase 2 — T=21 Padding Validation (this session):**
+Root cause investigation of T=21 VF=33% (prior session result):
+
+**Bug 1 — Sampling noise corruption (padding latent not zeroed):**
+- In `TarFlow1DMol.sample()`, `z = randn(n, T=21, 3)` filled ALL positions with Gaussian noise.
+- In PermutationFlip blocks, the sequence is reversed. Padding atoms (originally at positions 9-20) appear FIRST (positions 0-11 in permuted space).
+- The autoregressive chain started with this padding noise as context, corrupting all real atom generation.
+- Fix: Zero padding positions in `z` before calling `reverse()`, and re-zero after each block call in `reverse()`.
+- Partial result with Fix 1 only: VF = 47.2% (up from ~33%).
+
+**Bug 2 — Attention key masking (dominant bug):**
+- `MetaBlockWithCond.forward()` built `attn_mask = causal_mask * key_mask` where `key_mask` zeroed out all padding key positions.
+- In PermutationFlip blocks (padding appears first), position 11 (last padding position, just before first real atom at 12) had ALL its keys 0-11 masked — transformer sees NO valid context — produces near-zero affine params for the first real atom.
+- This starved the first real atom of any conditioning signal, causing degenerate generation.
+- Fix: Use causal mask ONLY in attention. Padding isolation is maintained separately by zeroing `xa, xb` for padding positions after the transformer pass (via `mask_perm`). Key insight: even though x_perm=0 at padding positions, the atom type embedding (cond_perm) and positional embeddings still carry meaningful context that should NOT be masked.
+- Result with both fixes: VF = 93.6% on T=21 ethanol.
+
+**Phase 2 success criterion: PASSED.**
+- VF(T=9) = 95%, VF(T=21) = 93.6%
+- |VF(T=9) - VF(T=21)| = 1.4pp < 10pp
+- Both >= 85%
+
+**Phase 3 — Multi-molecule OPTIMIZE (next):**
+INTENTION (write-before-execute): Launch 20k step multi-molecule run via Slurm on cuda:0-7.
+- Config: all 8 molecules, seq_length=21, channels=256, num_blocks=4, layers_per_block=2, head_dim=64, expansion=4
+- lr=5e-4 cosine, batch_size=256, warmup_steps=500, grad_clip=1.0
+- Success criterion: VF > 50% on ethanol AND mean VF > 40% (Phase 3 SANITY)
+- Promising criterion (if not met): Mean VF > 20% at step 5k (model is learning something)
+
+### New Files Created (this session)
+- `experiments/hypothesis/hyp_010_tarflow_apple_multimol/angles/sanity/val_T21fix/` — Fix 1 only results (VF=47.2%)
+- `experiments/hypothesis/hyp_010_tarflow_apple_multimol/angles/sanity/val_T21attnfix/` — Both fixes results (VF=93.6%)
+- `experiments/hypothesis/hyp_010_tarflow_apple_multimol/angles/sanity/val/config_phase2_T21_fixedsampling.json` — Fix 1 only config
+- `experiments/hypothesis/hyp_010_tarflow_apple_multimol/angles/sanity/val/config_phase2_T21_attnfix.json` — Both fixes config
+- `experiments/hypothesis/hyp_010_tarflow_apple_multimol/reports/diagnostic_report.md` — T=21 bug diagnosis
+- `experiments/hypothesis/hyp_010_tarflow_apple_multimol/reports/plan_report.md` — Phase 3 plan
+- `experiments/hypothesis/hyp_010_tarflow_apple_multimol/angles/sanity/full/config.json` — Phase 3 full run config
+- `scripts/slurm_hyp010_phase3.sh` — Phase 3 Slurm script
+
+### Slurm Jobs
+- `SLURM_JOB_ID=4157` — Phase 3 SANITY, 8 molecules, T=21, 20k steps, sbatch scripts/slurm_hyp010_phase3.sh
+
+### Phase 3 Results (2026-03-05)
+SLURM_JOB_ID=4157 on escher completed. Wall time: ~18.5 minutes. Exit code: 0.
+Final checkpoint (step 20000) evaluated:
+- Ethanol: VF=64.0% (criterion: >50%) PASSED
+- Mean VF: 71.6% (criterion: >40%) PASSED
+- All 8 molecules: VF > 50%
+- Best: malonaldehyde 82.6%, Worst: uracil 63.6%
+- Comparison to hyp_007: ethanol +8.2pp, mean +36.9pp, aspirin +58.2pp (9.2% → 67.4%)
+
+Phase 3 SANITY PASSED. HEURISTICS and SCALE skipped — primary criterion exceeded by large margin.
+
+### Commits (this session)
+- `4b65477` — [hyp_010] code: fix sampling bug — zero padding latent before reverse pass
+- `85a6f2e` — [hyp_010] code: fix attention mask in MetaBlockWithCond — causal only, no key masking
+- `f8c9dc6` — [hyp_010] config: T=21 validation run with both sampling + attention mask fixes
+- `6addf0c` — [hyp_010] results: Phase 2 diagnostic runs — T=21 padding fix investigation
+- `b5de8aa` — [hyp_010] config: pre-run snapshot for Phase 3 multi-molecule full run
+- `c9c3133` — [hyp_010] docs: log Phase 3 Slurm job ID and update process_log
+- `39cc986` — [hyp_010] docs: add hyp_009 and hyp_010 entries to experiment_log

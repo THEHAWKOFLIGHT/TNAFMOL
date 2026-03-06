@@ -1,0 +1,105 @@
+{
+  "exp_id": "hyp_010",
+  "command": "OPTIMIZE",
+  "status": "in_progress",
+  "created": "2026-03-06T13:00:00Z",
+  "last_updated": "2026-03-07T02:10:00Z",
+  "machine": {
+    "host": "localhost",
+    "user": "kai_nelson",
+    "gpu": "cuda:0",
+    "pid": null,
+    "claude_session_id": null
+  },
+  "artifacts": {
+    "dataset": "data/",
+    "checkpoints": [
+      "angles/sanity/val/best.pt",
+      "angles/sanity/val/final.pt",
+      "angles/sanity/val_T21attnfix/best.pt",
+      "angles/sanity/val_T21attnfix/final.pt",
+      "angles/sanity/full/best.pt",
+      "angles/sanity/full/final.pt"
+    ],
+    "raw_outputs": [
+      "angles/sanity/val/raw/",
+      "angles/sanity/val_T21attnfix/raw/",
+      "angles/sanity/full/raw/"
+    ]
+  },
+  "steps": [
+    {
+      "name": "implementation",
+      "status": "completed",
+      "acceptance": "src/train_apple.py written; TarFlow1DMol training loop working; forward-inverse consistency verified",
+      "completed_at": "2026-03-06T14:00:00Z",
+      "result": {"note": "train_apple.py with MultiMoleculeDataset, final-ckpt evaluation, two bug fixes applied to train_phase3.py"}
+    },
+    {
+      "name": "phase1_sanity_gate",
+      "status": "completed",
+      "acceptance": "Ethanol T=9, TarFlow1DMol, 5k steps: VF >= 90% (reproduces und_001)",
+      "completed_at": "2026-03-06T16:00:00Z",
+      "result": {"vf_ethanol": 0.95, "note": "VF=95% on ethanol T=9, 5k steps. Gate PASSED."}
+    },
+    {
+      "name": "phase2_padding_val",
+      "status": "completed",
+      "acceptance": "Ethanol T=9 vs T=21 with padding mask: |VF(T=9) - VF(T=21)| < 10pp, both >= 85%",
+      "completed_at": "2026-03-07T00:00:00Z",
+      "result": {
+        "vf_T9": 0.95,
+        "vf_T21": 0.936,
+        "gap_pp": 1.4,
+        "bugs_fixed": [
+          "Sampling: zero padding latent before reverse pass (Bug 1)",
+          "Attention: causal-only mask, no padding key masking (Bug 2)"
+        ],
+        "note": "Phase 2 PASSED. Both >= 85%, gap = 1.4pp < 10pp."
+      }
+    },
+    {
+      "name": "phase3_sanity_multimol",
+      "status": "completed",
+      "acceptance": "All 8 molecules, T=21, 20k steps: VF > 50% ethanol AND mean VF > 40%",
+      "completed_at": "2026-03-07T02:10:00Z",
+      "result": {
+        "vf_ethanol": 0.64,
+        "mean_vf": 0.716,
+        "molecules_above_50pct": 8,
+        "per_molecule": {
+          "aspirin": 0.674, "benzene": 0.794, "ethanol": 0.640,
+          "malonaldehyde": 0.826, "naphthalene": 0.810, "salicylic_acid": 0.674,
+          "toluene": 0.674, "uracil": 0.636
+        },
+        "wandb_run": "https://wandb.ai/kaityrusnelson1/tnafmol/runs/tw349mhw",
+        "slurm_job_id": 4157,
+        "note": "Phase 3 PASSED. Ethanol VF=64% > 50%, mean VF=71.6% > 40%. All 8 molecules > 50%."
+      }
+    },
+    {
+      "name": "phase3_heuristics",
+      "status": "skipped",
+      "reason": "Phase 3 SANITY already passed primary criterion. Mean VF=71.6% >> 40% target. SCALE not needed."
+    },
+    {
+      "name": "phase3_scale",
+      "status": "skipped",
+      "reason": "Phase 3 SANITY already passed primary criterion. No further capacity needed."
+    },
+    {
+      "name": "source_integration",
+      "status": "completed",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice; pre-merge checks pass",
+      "completed_at": "2026-03-07T02:30:00Z",
+      "result": {
+        "note": "N/A — all new code (train_apple.py, train_phase3.py fixes) already in src/. Removed verify_train_apple.py, eval_final_ckpt.py, diagnose_T21.py from experiment dir. Populated results/ with canonical plots."
+      }
+    },
+    {
+      "name": "merge_and_tag",
+      "status": "pending",
+      "acceptance": "Merged to main with tag hyp_010; pre-merge checks pass"
+    }
+  ]
+}
