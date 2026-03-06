@@ -3,34 +3,57 @@
   "command": "OPTIMIZE",
   "status": "in_progress",
   "created": "2026-03-06T13:00:00Z",
-  "last_updated": "2026-03-06T13:00:00Z",
+  "last_updated": "2026-03-07T00:00:00Z",
   "machine": {
     "host": "localhost",
     "user": "kai_nelson",
-    "gpu": "cuda:7",
+    "gpu": "cuda:0",
     "pid": null,
     "claude_session_id": null
   },
   "artifacts": {
     "dataset": "data/",
-    "checkpoints": [],
-    "raw_outputs": []
+    "checkpoints": [
+      "angles/sanity/val/best.pt",
+      "angles/sanity/val/final.pt",
+      "angles/sanity/val_T21attnfix/best.pt",
+      "angles/sanity/val_T21attnfix/final.pt"
+    ],
+    "raw_outputs": [
+      "angles/sanity/val/raw/",
+      "angles/sanity/val_T21attnfix/raw/"
+    ]
   },
   "steps": [
     {
       "name": "implementation",
-      "status": "pending",
-      "acceptance": "src/train_apple.py written; TarFlow1DMol training loop working; forward-inverse consistency verified"
+      "status": "completed",
+      "acceptance": "src/train_apple.py written; TarFlow1DMol training loop working; forward-inverse consistency verified",
+      "completed_at": "2026-03-06T14:00:00Z",
+      "result": {"note": "train_apple.py with MultiMoleculeDataset, final-ckpt evaluation, two bug fixes applied to train_phase3.py"}
     },
     {
       "name": "phase1_sanity_gate",
-      "status": "pending",
-      "acceptance": "Ethanol T=9, TarFlow1DMol, 5k steps: VF >= 90% (reproduces und_001)"
+      "status": "completed",
+      "acceptance": "Ethanol T=9, TarFlow1DMol, 5k steps: VF >= 90% (reproduces und_001)",
+      "completed_at": "2026-03-06T16:00:00Z",
+      "result": {"vf_ethanol": 0.95, "note": "VF=95% on ethanol T=9, 5k steps. Gate PASSED."}
     },
     {
       "name": "phase2_padding_val",
-      "status": "pending",
-      "acceptance": "Ethanol T=9 vs T=21 with padding mask: |VF(T=9) - VF(T=21)| < 10pp, both >= 85%"
+      "status": "completed",
+      "acceptance": "Ethanol T=9 vs T=21 with padding mask: |VF(T=9) - VF(T=21)| < 10pp, both >= 85%",
+      "completed_at": "2026-03-07T00:00:00Z",
+      "result": {
+        "vf_T9": 0.95,
+        "vf_T21": 0.936,
+        "gap_pp": 1.4,
+        "bugs_fixed": [
+          "Sampling: zero padding latent before reverse pass (Bug 1)",
+          "Attention: causal-only mask, no padding key masking (Bug 2)"
+        ],
+        "note": "Phase 2 PASSED. Both >= 85%, gap = 1.4pp < 10pp."
+      }
     },
     {
       "name": "phase3_sanity_multimol",
