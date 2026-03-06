@@ -670,15 +670,25 @@ class MetaBlockWithCond(nn.Module):
                 padding_mask.float().unsqueeze(-1)  # (B, T, 1)
             ).squeeze(-1)  # (B, T)
 
-        # Build combined attention mask (in permuted space)
-        attn_mask = self.base.attn_mask  # (T, T)
-        if mask_perm is not None:
-            B = x.size(0)
-            # Key masking in permuted space: query i can only attend to real key j
-            pad_key = mask_perm.unsqueeze(1).expand(B, attn_mask.size(0), -1)  # (B, T, T)
-            attn_mask_combined = (attn_mask.unsqueeze(0) * pad_key).unsqueeze(1)  # (B, 1, T, T)
-        else:
-            attn_mask_combined = attn_mask  # (T, T) — broadcasts correctly
+        # Build attention mask (in permuted space): CAUSAL ONLY, no padding key masking.
+        #
+        # Design choice: we do NOT mask out padding key positions from attention.
+        # Even though x_perm = 0 at padding positions, those tokens carry meaningful
+        # context via their atom type embedding (cond_perm) and positional embeddings.
+        # Masking them out starves real atoms of ALL context in PermutationFlip blocks
+        # where padding tokens appear FIRST — the first real atom would be generated
+        # with literally zero attention context (all preceding keys masked + zeroed).
+        #
+        # The causal mask alone enforces autoregressive correctness: token i's affine
+        # params come from the output shift (based on output at position i-1, which only
+        # saw positions 0..i-1). This is correct regardless of whether padding keys are
+        # masked — the information flow direction is controlled by the causal structure.
+        #
+        # Padding isolation (z_pad = 0) is enforced SEPARATELY by zeroing xa, xb for
+        # padding positions after the transformer pass (mask_perm zeroing below), NOT
+        # by masking padding keys in attention.
+        attn_mask = self.base.attn_mask  # (T, T) lower triangular causal mask only
+        attn_mask_combined = attn_mask  # (T, T) — broadcasts correctly over batch
 
         # Concatenate conditioning to positions for proj_in
         if cond_perm is not None:
