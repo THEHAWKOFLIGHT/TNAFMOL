@@ -1,0 +1,502 @@
+{
+  "experiment": "hyp_011",
+  "phase": "HEURISTICS sweep",
+  "n_configs": 27,
+  "baseline_mean_vf": 0.839,
+  "best_mean_vf": 0.911,
+  "best_config": {
+    "lr": 0.0005,
+    "log_det_reg_weight": 2.0,
+    "noise_sigma": 0.03
+  },
+  "promising_criterion": "mean_vf > 0.86",
+  "promising_criterion_met": true,
+  "ranked_results": [
+    {
+      "run": "run_22_lr5e-4_ldr2p0_ns003",
+      "lr": 0.0005,
+      "log_det_reg_weight": 2.0,
+      "noise_sigma": 0.03,
+      "mean_vf": 0.911,
+      "per_mol_vf": {
+        "aspirin": 0.73,
+        "benzene": 1.0,
+        "ethanol": 0.808,
+        "malonaldehyde": 0.978,
+        "naphthalene": 0.992,
+        "salicylic_acid": 0.862,
+        "toluene": 0.986,
+        "uracil": 0.932
+      },
+      "vs_baseline": 0.07200000000000006
+    },
+    {
+      "run": "run_19_lr5e-4_ldr0p0_ns003",
+      "lr": 0.0005,
+      "log_det_reg_weight": 0.0,
+      "noise_sigma": 0.03,
+      "mean_vf": 0.905,
+      "per_mol_vf": {
+        "aspirin": 0.734,
+        "benzene": 0.998,
+        "ethanol": 0.734,
+        "malonaldehyde": 0.986,
+        "naphthalene": 0.99,
+        "salicylic_acid": 0.888,
+        "toluene": 0.982,
+        "uracil": 0.928
+      },
+      "vs_baseline": 0.06600000000000006
+    },
+    {
+      "run": "run_13_lr3e-4_ldr2p0_ns003",
+      "lr": 0.0003,
+      "log_det_reg_weight": 2.0,
+      "noise_sigma": 0.03,
+      "mean_vf": 0.898,
+      "per_mol_vf": {
+        "aspirin": 0.724,
+        "benzene": 1.0,
+        "ethanol": 0.738,
+        "malonaldehyde": 0.986,
+        "naphthalene": 0.99,
+        "salicylic_acid": 0.868,
+        "toluene": 0.948,
+        "uracil": 0.93
+      },
+      "vs_baseline": 0.05900000000000005
+    },
+    {
+      "run": "run_25_lr5e-4_ldr5p0_ns003",
+      "lr": 0.0005,
+      "log_det_reg_weight": 5.0,
+      "noise_sigma": 0.03,
+      "mean_vf": 0.89375,
+      "per_mol_vf": {
+        "aspirin": 0.75,
+        "benzene": 1.0,
+        "ethanol": 0.65,
+        "malonaldehyde": 0.97,
+        "naphthalene": 0.984,
+        "salicylic_acid": 0.874,
+        "toluene": 0.968,
+        "uracil": 0.954
+      },
+      "vs_baseline": 0.054750000000000076
+    },
+    {
+      "run": "run_10_lr3e-4_ldr0p0_ns003",
+      "lr": 0.0003,
+      "log_det_reg_weight": 0.0,
+      "noise_sigma": 0.03,
+      "mean_vf": 0.89075,
+      "per_mol_vf": {
+        "aspirin": 0.54,
+        "benzene": 0.998,
+        "ethanol": 0.774,
+        "malonaldehyde": 0.992,
+        "naphthalene": 0.992,
+        "salicylic_acid": 0.912,
+        "toluene": 0.96,
+        "uracil": 0.958
+      },
+      "vs_baseline": 0.051750000000000074
+    },
+    {
+      "run": "run_16_lr3e-4_ldr5p0_ns003",
+      "lr": 0.0003,
+      "log_det_reg_weight": 5.0,
+      "noise_sigma": 0.03,
+      "mean_vf": 0.8855,
+      "per_mol_vf": {
+        "aspirin": 0.604,
+        "benzene": 1.0,
+        "ethanol": 0.646,
+        "malonaldehyde": 0.98,
+        "naphthalene": 0.996,
+        "salicylic_acid": 0.924,
+        "toluene": 0.964,
+        "uracil": 0.97
+      },
+      "vs_baseline": 0.046499999999999986
+    },
+    {
+      "run": "run_14_lr3e-4_ldr2p0_ns005",
+      "lr": 0.0003,
+      "log_det_reg_weight": 2.0,
+      "noise_sigma": 0.05,
+      "mean_vf": 0.8522500000000001,
+      "per_mol_vf": {
+        "aspirin": 0.6,
+        "benzene": 0.984,
+        "ethanol": 0.614,
+        "malonaldehyde": 0.978,
+        "naphthalene": 0.96,
+        "salicylic_acid": 0.846,
+        "toluene": 0.934,
+        "uracil": 0.902
+      },
+      "vs_baseline": 0.013250000000000095
+    },
+    {
+      "run": "run_20_lr5e-4_ldr0p0_ns005",
+      "lr": 0.0005,
+      "log_det_reg_weight": 0.0,
+      "noise_sigma": 0.05,
+      "mean_vf": 0.83875,
+      "per_mol_vf": {
+        "aspirin": 0.706,
+        "benzene": 0.972,
+        "ethanol": 0.724,
+        "malonaldehyde": 0.97,
+        "naphthalene": 0.91,
+        "salicylic_acid": 0.676,
+        "toluene": 0.91,
+        "uracil": 0.842
+      },
+      "vs_baseline": -0.00024999999999997247
+    },
+    {
+      "run": "run_11_lr3e-4_ldr0p0_ns005",
+      "lr": 0.0003,
+      "log_det_reg_weight": 0.0,
+      "noise_sigma": 0.05,
+      "mean_vf": 0.8375,
+      "per_mol_vf": {
+        "aspirin": 0.538,
+        "benzene": 0.98,
+        "ethanol": 0.64,
+        "malonaldehyde": 0.968,
+        "naphthalene": 0.928,
+        "salicylic_acid": 0.836,
+        "toluene": 0.906,
+        "uracil": 0.904
+      },
+      "vs_baseline": -0.0014999999999999458
+    },
+    {
+      "run": "run_17_lr3e-4_ldr5p0_ns005",
+      "lr": 0.0003,
+      "log_det_reg_weight": 5.0,
+      "noise_sigma": 0.05,
+      "mean_vf": 0.8365,
+      "per_mol_vf": {
+        "aspirin": 0.6,
+        "benzene": 0.98,
+        "ethanol": 0.63,
+        "malonaldehyde": 0.954,
+        "naphthalene": 0.946,
+        "salicylic_acid": 0.784,
+        "toluene": 0.902,
+        "uracil": 0.896
+      },
+      "vs_baseline": -0.0024999999999999467
+    },
+    {
+      "run": "run_26_lr5e-4_ldr5p0_ns005",
+      "lr": 0.0005,
+      "log_det_reg_weight": 5.0,
+      "noise_sigma": 0.05,
+      "mean_vf": 0.8315,
+      "per_mol_vf": {
+        "aspirin": 0.652,
+        "benzene": 0.962,
+        "ethanol": 0.73,
+        "malonaldehyde": 0.964,
+        "naphthalene": 0.85,
+        "salicylic_acid": 0.694,
+        "toluene": 0.912,
+        "uracil": 0.888
+      },
+      "vs_baseline": -0.007499999999999951
+    },
+    {
+      "run": "run_23_lr5e-4_ldr2p0_ns005",
+      "lr": 0.0005,
+      "log_det_reg_weight": 2.0,
+      "noise_sigma": 0.05,
+      "mean_vf": 0.826,
+      "per_mol_vf": {
+        "aspirin": 0.678,
+        "benzene": 0.96,
+        "ethanol": 0.68,
+        "malonaldehyde": 0.942,
+        "naphthalene": 0.858,
+        "salicylic_acid": 0.774,
+        "toluene": 0.882,
+        "uracil": 0.834
+      },
+      "vs_baseline": -0.013000000000000012
+    },
+    {
+      "run": "run_07_lr1e-4_ldr5p0_ns003",
+      "lr": 0.0001,
+      "log_det_reg_weight": 5.0,
+      "noise_sigma": 0.03,
+      "mean_vf": 0.78325,
+      "per_mol_vf": {
+        "aspirin": 0.232,
+        "benzene": 0.994,
+        "ethanol": 0.602,
+        "malonaldehyde": 0.932,
+        "naphthalene": 0.974,
+        "salicylic_acid": 0.862,
+        "toluene": 0.834,
+        "uracil": 0.836
+      },
+      "vs_baseline": -0.055749999999999966
+    },
+    {
+      "run": "run_01_lr1e-4_ldr0p0_ns003",
+      "lr": 0.0001,
+      "log_det_reg_weight": 0.0,
+      "noise_sigma": 0.03,
+      "mean_vf": 0.7695000000000001,
+      "per_mol_vf": {
+        "aspirin": 0.182,
+        "benzene": 0.994,
+        "ethanol": 0.608,
+        "malonaldehyde": 0.93,
+        "naphthalene": 0.97,
+        "salicylic_acid": 0.812,
+        "toluene": 0.804,
+        "uracil": 0.856
+      },
+      "vs_baseline": -0.0694999999999999
+    },
+    {
+      "run": "run_04_lr1e-4_ldr2p0_ns003",
+      "lr": 0.0001,
+      "log_det_reg_weight": 2.0,
+      "noise_sigma": 0.03,
+      "mean_vf": 0.7665,
+      "per_mol_vf": {
+        "aspirin": 0.202,
+        "benzene": 0.994,
+        "ethanol": 0.592,
+        "malonaldehyde": 0.932,
+        "naphthalene": 0.96,
+        "salicylic_acid": 0.824,
+        "toluene": 0.808,
+        "uracil": 0.82
+      },
+      "vs_baseline": -0.07250000000000001
+    },
+    {
+      "run": "run_08_lr1e-4_ldr5p0_ns005",
+      "lr": 0.0001,
+      "log_det_reg_weight": 5.0,
+      "noise_sigma": 0.05,
+      "mean_vf": 0.74,
+      "per_mol_vf": {
+        "aspirin": 0.228,
+        "benzene": 0.974,
+        "ethanol": 0.632,
+        "malonaldehyde": 0.858,
+        "naphthalene": 0.906,
+        "salicylic_acid": 0.766,
+        "toluene": 0.772,
+        "uracil": 0.784
+      },
+      "vs_baseline": -0.09899999999999998
+    },
+    {
+      "run": "run_05_lr1e-4_ldr2p0_ns005",
+      "lr": 0.0001,
+      "log_det_reg_weight": 2.0,
+      "noise_sigma": 0.05,
+      "mean_vf": 0.7342500000000001,
+      "per_mol_vf": {
+        "aspirin": 0.194,
+        "benzene": 0.976,
+        "ethanol": 0.634,
+        "malonaldehyde": 0.88,
+        "naphthalene": 0.91,
+        "salicylic_acid": 0.762,
+        "toluene": 0.73,
+        "uracil": 0.788
+      },
+      "vs_baseline": -0.1047499999999999
+    },
+    {
+      "run": "run_02_lr1e-4_ldr0p0_ns005",
+      "lr": 0.0001,
+      "log_det_reg_weight": 0.0,
+      "noise_sigma": 0.05,
+      "mean_vf": 0.73125,
+      "per_mol_vf": {
+        "aspirin": 0.19,
+        "benzene": 0.98,
+        "ethanol": 0.612,
+        "malonaldehyde": 0.874,
+        "naphthalene": 0.902,
+        "salicylic_acid": 0.756,
+        "toluene": 0.75,
+        "uracil": 0.786
+      },
+      "vs_baseline": -0.10775000000000001
+    },
+    {
+      "run": "run_27_lr5e-4_ldr5p0_ns01",
+      "lr": 0.0005,
+      "log_det_reg_weight": 5.0,
+      "noise_sigma": 0.1,
+      "mean_vf": 0.59075,
+      "per_mol_vf": {
+        "aspirin": 0.274,
+        "benzene": 0.694,
+        "ethanol": 0.542,
+        "malonaldehyde": 0.798,
+        "naphthalene": 0.634,
+        "salicylic_acid": 0.582,
+        "toluene": 0.556,
+        "uracil": 0.646
+      },
+      "vs_baseline": -0.24824999999999997
+    },
+    {
+      "run": "run_21_lr5e-4_ldr0p0_ns01",
+      "lr": 0.0005,
+      "log_det_reg_weight": 0.0,
+      "noise_sigma": 0.1,
+      "mean_vf": 0.5865,
+      "per_mol_vf": {
+        "aspirin": 0.282,
+        "benzene": 0.72,
+        "ethanol": 0.534,
+        "malonaldehyde": 0.788,
+        "naphthalene": 0.58,
+        "salicylic_acid": 0.582,
+        "toluene": 0.534,
+        "uracil": 0.672
+      },
+      "vs_baseline": -0.25249999999999995
+    },
+    {
+      "run": "run_24_lr5e-4_ldr2p0_ns01",
+      "lr": 0.0005,
+      "log_det_reg_weight": 2.0,
+      "noise_sigma": 0.1,
+      "mean_vf": 0.5860000000000001,
+      "per_mol_vf": {
+        "aspirin": 0.284,
+        "benzene": 0.702,
+        "ethanol": 0.528,
+        "malonaldehyde": 0.774,
+        "naphthalene": 0.614,
+        "salicylic_acid": 0.594,
+        "toluene": 0.556,
+        "uracil": 0.636
+      },
+      "vs_baseline": -0.2529999999999999
+    },
+    {
+      "run": "run_15_lr3e-4_ldr2p0_ns01",
+      "lr": 0.0003,
+      "log_det_reg_weight": 2.0,
+      "noise_sigma": 0.1,
+      "mean_vf": 0.5802499999999999,
+      "per_mol_vf": {
+        "aspirin": 0.274,
+        "benzene": 0.714,
+        "ethanol": 0.518,
+        "malonaldehyde": 0.78,
+        "naphthalene": 0.608,
+        "salicylic_acid": 0.572,
+        "toluene": 0.532,
+        "uracil": 0.644
+      },
+      "vs_baseline": -0.25875000000000004
+    },
+    {
+      "run": "run_18_lr3e-4_ldr5p0_ns01",
+      "lr": 0.0003,
+      "log_det_reg_weight": 5.0,
+      "noise_sigma": 0.1,
+      "mean_vf": 0.57825,
+      "per_mol_vf": {
+        "aspirin": 0.264,
+        "benzene": 0.712,
+        "ethanol": 0.538,
+        "malonaldehyde": 0.764,
+        "naphthalene": 0.616,
+        "salicylic_acid": 0.548,
+        "toluene": 0.548,
+        "uracil": 0.636
+      },
+      "vs_baseline": -0.2607499999999999
+    },
+    {
+      "run": "run_12_lr3e-4_ldr0p0_ns01",
+      "lr": 0.0003,
+      "log_det_reg_weight": 0.0,
+      "noise_sigma": 0.1,
+      "mean_vf": 0.5780000000000001,
+      "per_mol_vf": {
+        "aspirin": 0.266,
+        "benzene": 0.722,
+        "ethanol": 0.536,
+        "malonaldehyde": 0.772,
+        "naphthalene": 0.594,
+        "salicylic_acid": 0.57,
+        "toluene": 0.536,
+        "uracil": 0.628
+      },
+      "vs_baseline": -0.2609999999999999
+    },
+    {
+      "run": "run_06_lr1e-4_ldr2p0_ns01",
+      "lr": 0.0001,
+      "log_det_reg_weight": 2.0,
+      "noise_sigma": 0.1,
+      "mean_vf": 0.5255000000000001,
+      "per_mol_vf": {
+        "aspirin": 0.18,
+        "benzene": 0.688,
+        "ethanol": 0.512,
+        "malonaldehyde": 0.656,
+        "naphthalene": 0.572,
+        "salicylic_acid": 0.552,
+        "toluene": 0.442,
+        "uracil": 0.602
+      },
+      "vs_baseline": -0.3134999999999999
+    },
+    {
+      "run": "run_03_lr1e-4_ldr0p0_ns01",
+      "lr": 0.0001,
+      "log_det_reg_weight": 0.0,
+      "noise_sigma": 0.1,
+      "mean_vf": 0.5185,
+      "per_mol_vf": {
+        "aspirin": 0.18,
+        "benzene": 0.704,
+        "ethanol": 0.488,
+        "malonaldehyde": 0.622,
+        "naphthalene": 0.572,
+        "salicylic_acid": 0.536,
+        "toluene": 0.454,
+        "uracil": 0.592
+      },
+      "vs_baseline": -0.3205
+    },
+    {
+      "run": "run_09_lr1e-4_ldr5p0_ns01",
+      "lr": 0.0001,
+      "log_det_reg_weight": 5.0,
+      "noise_sigma": 0.1,
+      "mean_vf": 0.51725,
+      "per_mol_vf": {
+        "aspirin": 0.174,
+        "benzene": 0.67,
+        "ethanol": 0.478,
+        "malonaldehyde": 0.644,
+        "naphthalene": 0.588,
+        "salicylic_acid": 0.554,
+        "toluene": 0.446,
+        "uracil": 0.584
+      },
+      "vs_baseline": -0.32175
+    }
+  ]
+}

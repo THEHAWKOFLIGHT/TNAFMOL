@@ -1,0 +1,98 @@
+{
+  "exp_id": "hyp_011",
+  "command": "OPTIMIZE",
+  "status": "completed",
+  "created": "2026-03-06T12:00:00Z",
+  "last_updated": "2026-03-06T23:30:00Z",
+  "machine": {
+    "host": "localhost",
+    "user": "kai_nelson",
+    "gpu": "cuda:4,cuda:5",
+    "pid": null,
+    "claude_session_id": null
+  },
+  "artifacts": {
+    "dataset": "data/",
+    "checkpoints": [
+      "angles/sanity/val/best.pt",
+      "angles/sanity/diag/best.pt",
+      "angles/heuristics/full/best.pt",
+      "angles/heuristics/full/final.pt",
+      "angles/scale/full/best.pt",
+      "angles/scale/full/final.pt"
+    ],
+    "raw_outputs": [
+      "angles/sanity/val/raw/",
+      "angles/sanity/diag/raw/",
+      "angles/heuristics/full/raw/",
+      "angles/scale/full/raw/"
+    ]
+  },
+  "steps": [
+    {
+      "name": "diagnostic",
+      "status": "completed",
+      "acceptance": "Diagnostic based on hyp_010 results — gap analysis already done in task brief",
+      "completed_at": "2026-03-06T12:00:00Z"
+    },
+    {
+      "name": "plan",
+      "status": "completed",
+      "acceptance": "Plan Sub-report written and Postdoc-approved",
+      "completed_at": "2026-03-06T12:30:00Z"
+    },
+    {
+      "name": "angle_sanity_val_runA",
+      "status": "completed",
+      "acceptance": "Run A (50k steps, channels=256, blocks=4) complete with VF evaluation",
+      "result": {"mean_vf": 0.733, "toluene_collapse": true},
+      "completed_at": "2026-03-06T13:30:00Z"
+    },
+    {
+      "name": "angle_sanity_val_runB",
+      "status": "completed",
+      "acceptance": "Run B (20k steps, channels=384, blocks=6) complete with VF evaluation",
+      "result": {"mean_vf": 0.839},
+      "completed_at": "2026-03-06T13:30:00Z"
+    },
+    {
+      "name": "angle_heuristics_sweep",
+      "status": "completed",
+      "acceptance": "W&B sweep over lr/ldr/noise_sigma completed; best config selected",
+      "result": {"best_config": "lr=5e-4, ldr=2.0, noise_sigma=0.03", "best_mean_vf": 0.911},
+      "completed_at": "2026-03-06T16:00:00Z"
+    },
+    {
+      "name": "angle_heuristics_full",
+      "status": "completed",
+      "acceptance": "Full training run with best sweep config; VF evaluated on all 8 molecules",
+      "result": {"mean_vf": 0.947},
+      "completed_at": "2026-03-06T18:00:00Z"
+    },
+    {
+      "name": "angle_scale_temp_sweep_phase2",
+      "status": "completed",
+      "acceptance": "Temperature sweep on Phase 2 checkpoint; best temperature identified",
+      "result": {"best_temperature": 0.8, "best_mean_vf": 0.959},
+      "completed_at": "2026-03-06T20:30:00Z"
+    },
+    {
+      "name": "angle_scale_full",
+      "status": "completed",
+      "acceptance": "SCALE full run (512ch, 8blk, 50k steps) complete; VF evaluated on all 8 molecules",
+      "result": {"mean_vf_t1": 0.974, "mean_vf_t07": 0.989, "best_temperature": 0.7},
+      "completed_at": "2026-03-06T22:30:00Z"
+    },
+    {
+      "name": "source_integration",
+      "status": "completed",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice",
+      "completed_at": "2026-03-06T23:00:00Z"
+    },
+    {
+      "name": "merge_and_tag",
+      "status": "pending",
+      "acceptance": "Merged to main with tag hyp_011; pre-merge checks pass"
+    }
+  ]
+}

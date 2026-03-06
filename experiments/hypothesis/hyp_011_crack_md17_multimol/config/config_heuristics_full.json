@@ -1,0 +1,47 @@
+{
+    "exp_id": "hyp_011",
+    "angle": "heuristics",
+    "stage": "full",
+    "command": "OPTIMIZE",
+    "run_name_suffix": "best_lr5e-4_ldr2_ns003_50k",
+
+    "seed": 42,
+    "device": "cuda:0",
+
+    "seq_length": 21,
+    "channels": 384,
+    "num_blocks": 6,
+    "layers_per_block": 2,
+    "head_dim": 64,
+    "expansion": 4,
+    "use_atom_type_cond": true,
+    "atom_type_emb_dim": 16,
+    "num_atom_types": 4,
+    "use_padding_mask": true,
+    "use_shared_scale": false,
+    "use_clamp": false,
+    "log_det_reg_weight": 2.0,
+
+    "n_steps": 50000,
+    "batch_size": 128,
+    "lr": 5e-4,
+    "lr_schedule": "cosine",
+    "warmup_steps": 500,
+    "grad_clip_norm": 1.0,
+    "val_interval": 1000,
+    "eval_n_samples": 500,
+    "weight_decay": 1e-5,
+
+    "data_root": "data/",
+    "molecules": null,
+    "max_atoms": 21,
+    "noise_sigma": 0.03,
+    "augment_train": true,
+
+    "wandb_project": "tnafmol",
+    "wandb_group": "hyp_011",
+    "wandb_tags": ["hypothesis", "hyp_011", "OPTIMIZE", "heuristics", "full"],
+    "wandb_notes": "Phase 2 HEURISTICS full run. Best config from 27-run sweep: lr=5e-4, ldr=2.0, ns=0.03 (91.1% mean VF at 20k steps). Running 50k steps fresh init to push result further. All 8 molecules improved vs Run B baseline (83.9%).",
+
+    "output_dir": "experiments/hypothesis/hyp_011_crack_md17_multimol"
+}

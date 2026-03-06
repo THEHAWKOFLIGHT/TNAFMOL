@@ -561,3 +561,63 @@ it can generalize to multi-molecule training with mean VF > 40%.
 
 **Story fit:** FITS. Apple TarFlow generalizes across 8 molecules with correct padding implementation.
 Major improvement over hyp_007 best (ethanol 55.8% → 64.0%, mean 34.7% → 71.6%, aspirin 9.2% → 67.4%).
+
+---
+
+## hyp_011 — Crack MD17 Multi-Molecule TarFlow (Apple Architecture)
+**Date:** 2026-03-06 | **Branch:** `exp/hyp_011` | **Tag:** `hyp_011`
+**Type:** Hypothesis-Driven | **Command:** OPTIMIZE
+
+**Objective:** Push multi-molecule TarFlow from hyp_010 baseline (71.6% mean VF) to 85%+ across all 8 MD17 molecules, using the same Apple architecture (TarFlow1DMol) with systematic capacity and HP tuning.
+
+### Phase 1 — SANITY (Capacity vs. Training Budget)
+
+Tested two hypotheses in parallel:
+
+**Run A** (256ch, 4blk, 50k steps, lr=5e-4, batch=256):
+- W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/ls03bb0g
+- Mean VF = 73.3% — toluene collapse to 3.2% at 50k steps (catastrophic forgetting)
+- Small model + long training = per-molecule collapse
+
+**Run B** (384ch, 6blk, 20k steps, lr=5e-4, batch=128):
+- W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/820m2ely
+- Mean VF = 83.9% — all 8 molecules improved, no collapse
+- Capacity increase is the primary improvement lever
+
+**Conclusion:** Run B architecture selected as base for HEURISTICS. Capacity > training budget for multi-molecule generalization.
+
+### Phase 2 — HEURISTICS (Hyperparameter Sweep)
+
+27-config W&B sweep: lr × ldr × noise_sigma on Run B architecture.
+All 27 runs completed on local GPUs (0,3,4,5,6,7).
+
+Best config: lr=5e-4, ldr=2.0, noise_sigma=0.03 → mean VF = 91.1% at 20k steps.
+Key finding: noise_sigma=0.03 consistently beats 0.05; 0.10 is catastrophic.
+
+Full run (50k steps, best config):
+- W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/xo61cylz
+- Mean VF = **94.7%** — all 8 > 82%, 7 of 8 > 90%
+- Config: 384ch, 6blk, lr=5e-4, ldr=2.0, ns=0.03, 50k steps, ~21.4M params
+
+### Phase 3 — SCALE (Bigger Model) + Temperature Sweep
+
+Temperature sweep (eval-only, no training) on Phase 2 checkpoint:
+- Best T=0.8 → 95.9% mean VF (+1.2pp vs T=1.0 = 94.4%)
+
+SCALE full training (512ch, 8blk, ~50.6M params, 50k steps, same HPs):
+- W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/z7dwsfdj
+- Mean VF = **97.4%** at T=1.0 — all 8 > 89%
+- Per-molecule: aspirin 89.6%, benzene 100%, ethanol 95.0%, malonaldehyde 99.6%, naphthalene 99.8%, salicylic_acid 96.8%, toluene 99.8%, uracil 98.8%
+
+Temperature sweep on SCALE checkpoint:
+- Best T=0.7 → **98.9% mean VF** (all 8 > 95%)
+- Aspirin: 89.6% → 95.6%, ethanol: 95.0% → 96.2% at T=0.7
+
+### Final Result
+
+**Best result: SCALE checkpoint at T=0.7 — 98.9% mean VF**
+Comparison table (mean VF): hyp_010 → 71.6% | Phase 1 → 83.9% | Phase 2 → 94.7% | Phase 3 → 98.9% (T=0.7)
+
+**Story fit:** FITS. Multi-molecule TarFlow with sufficient capacity (50.6M params) matches the per-molecule ceiling (98.2% from und_001). A single shared model effectively matches dedicated per-molecule models.
+
+**Status:** DONE — all criteria met and exceeded. OPTIMIZE complete.
