@@ -1,6 +1,6 @@
 {
   "exp_id": "hyp_012",
-  "angle": "sanity",
+  "angle": "arm_a_sanity",
   "stage": "val",
   "command": "OPTIMIZE",
   "seed": 42,
