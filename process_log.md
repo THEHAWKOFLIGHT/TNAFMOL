@@ -24,16 +24,47 @@ INTENTION (write-before-execute):
 4. Compare against hyp_010 baseline and assess promising criterion
 
 ### New Files Created
-- `experiments/hypothesis/hyp_011_crack_md17_multimol/reports/` — reports directory (created at experiment init)
-- `experiments/hypothesis/hyp_011_crack_md17_multimol/reports/diagnostic_report.md` — to be written after results
-- `experiments/hypothesis/hyp_011_crack_md17_multimol/reports/plan_report.md` — to be written after results
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/sanity/val/runA_stdout.log` — Run A training stdout
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/sanity/val/best.pt` — Run A best checkpoint
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/sanity/val/final.pt` — Run A final checkpoint
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/sanity/val/config.json` — Run A config (saved by train_apple.py)
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/sanity/val/raw/mol_results.pt` — Run A per-molecule VF results
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/sanity/val/hyp_011_loss_curve.png` — Run A loss curve
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/sanity/val/hyp_011_vf_bar.png` — Run A VF bar chart
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/sanity/diag/runB_stdout.log` — Run B training stdout
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/sanity/diag/best.pt` — Run B best checkpoint
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/sanity/diag/final.pt` — Run B final checkpoint
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/sanity/diag/config.json` — Run B config
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/sanity/diag/raw/mol_results.pt` — Run B per-molecule VF results
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/sanity/diag/hyp_011_loss_curve.png` — Run B loss curve
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/sanity/diag/hyp_011_vf_bar.png` — Run B VF bar chart
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/reports/diagnostic_report.md` — Phase 1 diagnostic report
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/reports/plan_report.md` — Phase 2/3 plan report
 
 ### Commits
 *(to be filled after commits)*
 
 ### Notes
 - W&B project: tnafmol, group: hyp_011
+- Run A W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/ls03bb0g
+- Run B W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/820m2ely
 - Both runs use config stage labels to separate output directories (val for Run A, diag for Run B)
+- Run A toluene collapse: 3.2% VF at 50k steps — late-training instability with small model on diverse task
+- Run B wins: 83.9% mean VF, all 8 molecules improved, capacity > training budget finding
+- Promising criterion MET: Run B mean VF 83.9% > 78% threshold
+
+### Phase 1 Results Summary
+| Molecule | hyp_010 | Run A (256ch, 50k) | Run B (384ch, 20k) |
+|----------|---------|-------------------|-------------------|
+| aspirin | 67.4% | 83.2% | 70.6% |
+| benzene | 79.4% | 94.6% | 97.2% |
+| ethanol | 64.0% | 86.8% | 72.4% |
+| malonaldehyde | 82.6% | 94.6% | 97.0% |
+| naphthalene | 81.0% | 68.4% | 91.0% |
+| salicylic_acid | 67.4% | 70.2% | 67.6% |
+| toluene | 67.4% | 3.2% (COLLAPSE) | 91.0% |
+| uracil | 63.6% | 85.6% | 84.2% |
+| **Mean** | **71.6%** | **73.3%** | **83.9%** |
 
 ---
 
