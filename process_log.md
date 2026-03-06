@@ -4,6 +4,39 @@ PhD student-maintained. Append-only decisions, reasoning, file manifest.
 
 ---
 
+## 2026-03-06 — hyp_011: Phase 1 SANITY validation runs
+**Branch:** `exp/hyp_011`
+
+### Decisions & Reasoning
+- hyp_010 baseline: mean VF=71.6% (channels=256, blocks=4, lr=1e-3, 20k steps, batch_size=128)
+- und_001 ceiling: 98.2% mean VF (per-molecule training, no multi-molecule complexity)
+- Gap: 26.6pp from ceiling — need to determine if gap is due to training budget, model capacity, or learning rate
+- Phase 1 tests two parallel hypotheses:
+  - Run A: Same model as hyp_010 (256ch, 4blk) but LONGER training (50k steps, 2.5x) + lower lr (5e-4 vs 1e-3) + larger batch (256 vs 128). Tests if hyp_010 was undertrained.
+  - Run B: Bigger model (384ch, 6blk) at same training budget as hyp_010 (20k steps). Tests if capacity is the bottleneck.
+- Promising criterion: mean VF > 78% on either run (>6.4pp improvement)
+- Device assignment: Run A → cuda:4 (physical GPU 4), Run B → cuda:7 (physical GPU 7). Both free (272 MiB used only).
+
+INTENTION (write-before-execute):
+1. 100-step test run on cuda:5 to verify config loading, data loading, model init, and W&B connection
+2. If test passes, launch Run A + Run B in parallel as background processes
+3. Collect mol_results.pt from each output directory after completion
+4. Compare against hyp_010 baseline and assess promising criterion
+
+### New Files Created
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/reports/` — reports directory (created at experiment init)
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/reports/diagnostic_report.md` — to be written after results
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/reports/plan_report.md` — to be written after results
+
+### Commits
+*(to be filled after commits)*
+
+### Notes
+- W&B project: tnafmol, group: hyp_011
+- Both runs use config stage labels to separate output directories (val for Run A, diag for Run B)
+
+---
+
 ## 2026-02-28 — hyp_001: MD17 Data Pipeline
 **Branch:** `exp/hyp_001`
 
