@@ -76,6 +76,21 @@ hyp_006 changes:
   Hypothesis: the SOS+strictly-causal mechanism creates an exploitation pathway not
   present in output-shift architecture. Output-shift eliminates this pathway, enabling
   multi-molecule training without log-det explosion.
+
+hyp_009 changes:
+- use_pre_norm: TarFlowBlock and TarFlow accept use_pre_norm=True flag.
+  When enabled, switches from post-norm (apply LayerNorm AFTER residual add) to pre-norm
+  (apply LayerNorm BEFORE the sublayer). This matches Apple TarFlow's architecture exactly.
+  Pre-norm path:
+    h = h + dropout(attn(LayerNorm(h)))  (vs. post-norm: h = LayerNorm(h + dropout(attn(h))))
+    h = h + ffn(LayerNorm(h))            (vs. post-norm: h = LayerNorm(h + ffn(h)))
+    + final_norm applied at end of block
+  Post-norm path (use_pre_norm=False): IDENTICAL to original code (backward compat).
+- layers_per_block: TarFlowBlock and TarFlow accept layers_per_block=1 (default).
+  When layers_per_block=2, each TarFlowBlock contains 2 independent attention+FFN sublayers
+  (stacked sequentially). This matches Apple's MetaBlock with num_layers=2.
+  layers_per_block=1 default: IDENTICAL to original code (backward compat).
+- dropout: Model.py already supports dropout; hyp_009 uses dropout=0.0 to match Apple.
 """
 
 import math
@@ -338,6 +353,12 @@ class TarFlowBlock(nn.Module):
             dimension) instead of 1 shared log_scale. Changes out_proj output from 4 to 6 dims
             (3 shift + 3 log_scale). Only active when shift_only=False. Only implemented for
             the output-shift path (hyp_008). Backward compat: False = original behavior.
+        use_pre_norm: if True, use pre-norm LayerNorm (apply LN before sublayer, not after
+            residual). Matches Apple TarFlow architecture (hyp_009). Default False = original
+            post-norm behavior (backward compat).
+        layers_per_block: number of attention+FFN sublayer pairs per block (hyp_009).
+            Default 1 = original behavior (backward compat). When 2, each block has
+            2 sequential attention+FFN pairs, matching Apple's MetaBlock num_layers=2.
         log_scale_max: DEPRECATED — kept for backward compat, ignored if alpha_pos/alpha_neg provided
     """
 
@@ -357,6 +378,8 @@ class TarFlowBlock(nn.Module):
         zero_padding_queries: bool = False,
         use_output_shift: bool = False,
         per_dim_scale: bool = False,
+        use_pre_norm: bool = False,
+        layers_per_block: int = 1,
         log_scale_max: float = 0.5,  # DEPRECATED — ignored, kept for compat
     ):
         super().__init__()
@@ -370,6 +393,8 @@ class TarFlowBlock(nn.Module):
         self.zero_padding_queries = zero_padding_queries
         self.use_output_shift = use_output_shift
         self.per_dim_scale = per_dim_scale
+        self.use_pre_norm = use_pre_norm
+        self.layers_per_block = layers_per_block
 
         # Learnable SOS token (provides context for the first atom)
         # Only used when use_output_shift=False (SOS path).
@@ -386,25 +411,40 @@ class TarFlowBlock(nn.Module):
             pos_enc_size = max_atoms if use_output_shift else max_atoms + 1
             self.pos_embed = nn.Embedding(pos_enc_size, d_model)
 
-        # Multi-head attention
-        self.attn = nn.MultiheadAttention(
-            embed_dim=d_model,
-            num_heads=n_heads,
-            dropout=dropout,
-            batch_first=True,
-        )
-        self.attn_norm = nn.LayerNorm(d_model)
-        self.attn_dropout = nn.Dropout(dropout)
+        # Transformer sublayers (hyp_009): nn.ModuleList of dicts (one per layers_per_block)
+        # Each dict contains: attn, attn_norm, attn_dropout, ffn, ffn_norm
+        # When layers_per_block=1 and use_pre_norm=False: mathematically identical to original.
+        self.layers = nn.ModuleList()
+        for _ in range(layers_per_block):
+            layer = nn.ModuleDict({
+                'attn': nn.MultiheadAttention(
+                    embed_dim=d_model,
+                    num_heads=n_heads,
+                    dropout=dropout,
+                    batch_first=True,
+                ),
+                'attn_norm': nn.LayerNorm(d_model),
+                'attn_dropout': nn.Dropout(dropout),
+                'ffn': nn.Sequential(
+                    nn.Linear(d_model, ffn_mult * d_model),
+                    nn.GELU(),
+                    nn.Dropout(dropout),
+                    nn.Linear(ffn_mult * d_model, d_model),
+                    nn.Dropout(dropout),
+                ),
+                'ffn_norm': nn.LayerNorm(d_model),
+            })
+            self.layers.append(layer)
 
-        # FFN
-        self.ffn = nn.Sequential(
-            nn.Linear(d_model, ffn_mult * d_model),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(ffn_mult * d_model, d_model),
-            nn.Dropout(dropout),
-        )
-        self.ffn_norm = nn.LayerNorm(d_model)
+        # Final LayerNorm for pre-norm path (applied after all sublayers in block).
+        # Only created when use_pre_norm=True; absent for post-norm (backward compat).
+        if use_pre_norm:
+            self.final_norm = nn.LayerNorm(d_model)
+
+        # Convenience aliases for backward compatibility (used in some state_dict keys).
+        # These point to the first sublayer's components — single-layer models are unaffected.
+        # NOTE: These are NOT separate parameters — they reference the same objects in self.layers[0].
+        # We do NOT create these aliases to avoid parameter double-counting. Access via self.layers[0].
 
         # Output head:
         #   shift_only=True: d_model -> shift(3) — volume-preserving (no scale)
@@ -578,12 +618,23 @@ class TarFlowBlock(nn.Module):
             -1, self.n_heads, -1, -1
         ).reshape(B * self.n_heads, N + 1, N + 1)
 
-        # Self-attention — single float mask, no key_padding_mask
-        h_attn, _ = self.attn(h, h, h, attn_mask=combined_mask)
-        h = self.attn_norm(h + self.attn_dropout(h_attn))
-
-        # FFN
-        h = self.ffn_norm(h + self.ffn(h))
+        # Apply transformer sublayers (hyp_009: supports layers_per_block > 1 and pre-norm)
+        if self.use_pre_norm:
+            # Pre-norm path (Apple TarFlow style): LayerNorm BEFORE sublayer
+            for layer in self.layers:
+                h_normed = layer['attn_norm'](h)
+                h_attn, _ = layer['attn'](h_normed, h_normed, h_normed, attn_mask=combined_mask)
+                h = h + layer['attn_dropout'](h_attn)
+                h = h + layer['ffn'](layer['ffn_norm'](h))
+            # Final LayerNorm after all sublayers (pre-norm convention)
+            h = self.final_norm(h)
+        else:
+            # Post-norm path (original): LayerNorm AFTER residual add
+            # When layers_per_block=1: mathematically identical to original code.
+            for layer in self.layers:
+                h_attn, _ = layer['attn'](h, h, h, attn_mask=combined_mask)
+                h = layer['attn_norm'](h + layer['attn_dropout'](h_attn))
+                h = layer['ffn_norm'](h + layer['ffn'](h))
 
         # Drop SOS output, return only atom outputs
         atom_out = h[:, 1:, :]  # (B, N, d_model)
@@ -667,12 +718,23 @@ class TarFlowBlock(nn.Module):
             -1, self.n_heads, -1, -1
         ).reshape(B * self.n_heads, N, N)
 
-        # Self-attention
-        h_attn, _ = self.attn(h, h, h, attn_mask=combined_mask)
-        h = self.attn_norm(h + self.attn_dropout(h_attn))
-
-        # FFN
-        h = self.ffn_norm(h + self.ffn(h))
+        # Apply transformer sublayers (hyp_009: supports layers_per_block > 1 and pre-norm)
+        if self.use_pre_norm:
+            # Pre-norm path (Apple TarFlow style): LayerNorm BEFORE sublayer
+            for layer in self.layers:
+                h_normed = layer['attn_norm'](h)
+                h_attn, _ = layer['attn'](h_normed, h_normed, h_normed, attn_mask=combined_mask)
+                h = h + layer['attn_dropout'](h_attn)
+                h = h + layer['ffn'](layer['ffn_norm'](h))
+            # Final LayerNorm after all sublayers (pre-norm convention)
+            h = self.final_norm(h)
+        else:
+            # Post-norm path (original): LayerNorm AFTER residual add
+            # When layers_per_block=1: mathematically identical to original code.
+            for layer in self.layers:
+                h_attn, _ = layer['attn'](h, h, h, attn_mask=combined_mask)
+                h = layer['attn_norm'](h + layer['attn_dropout'](h_attn))
+                h = layer['ffn_norm'](h + layer['ffn'](h))
 
         return h  # (B, N, d_model) — output shift applied in forward()
 
@@ -944,6 +1006,10 @@ class TarFlow(nn.Module):
         use_output_shift: if True, use Apple's output-shift mechanism (hyp_006)
         per_dim_scale: if True, predict 3 independent log_scales per atom (hyp_008). Propagated
             to all TarFlowBlock instances. Only active for output-shift path + shift_only=False.
+        use_pre_norm: if True, use pre-norm LayerNorm (hyp_009). Propagated to all TarFlowBlock
+            instances. Default False = original post-norm (backward compat).
+        layers_per_block: number of attention+FFN sublayer pairs per block (hyp_009). Default 1
+            = original behavior (backward compat). Propagated to all TarFlowBlock instances.
         log_scale_max: DEPRECATED — kept for backward compat, ignored
     """
 
@@ -966,6 +1032,8 @@ class TarFlow(nn.Module):
         zero_padding_queries: bool = False,
         use_output_shift: bool = False,
         per_dim_scale: bool = False,
+        use_pre_norm: bool = False,
+        layers_per_block: int = 1,
         log_scale_max: float = 0.5,  # DEPRECATED — kept for backward compat
     ):
         super().__init__()
@@ -982,6 +1050,8 @@ class TarFlow(nn.Module):
         self.zero_padding_queries = zero_padding_queries
         self.use_output_shift = use_output_shift
         self.per_dim_scale = per_dim_scale
+        self.use_pre_norm = use_pre_norm
+        self.layers_per_block = layers_per_block
 
         # Atom type embedding (shared across all blocks)
         self.atom_type_emb = nn.Embedding(n_atom_types, atom_type_emb_dim)
@@ -1018,6 +1088,8 @@ class TarFlow(nn.Module):
                 zero_padding_queries=zero_padding_queries,
                 use_output_shift=use_output_shift,
                 per_dim_scale=per_dim_scale,
+                use_pre_norm=use_pre_norm,
+                layers_per_block=layers_per_block,
             )
             for i in range(n_blocks)
         ])

@@ -1355,3 +1355,92 @@ in model.py (correct, no negative effect). Escalate to Postdoc with updated diag
 - `8df4716` — [hyp_008] code: add per_dim_scale to model and train
 - `fdd49a1` — [hyp_008] config: pre-run snapshot for phase1_ethanol
 - `3717c8b` — [hyp_008] results: Phase 1 investigation FAILED — best VF 39.2%, re-diagnosis
+
+---
+
+## 2026-03-05 — hyp_009: Pre-Norm + Layers Per Block Architectural Alignment
+**Branch:** `exp/hyp_009`
+
+### Decisions & Reasoning
+- Root cause of 56pp VF gap confirmed from hyp_008 re-diagnosis: (1) post-norm vs pre-norm, (2) layers_per_block=1 vs 2, (3) dropout=0.1 vs 0.0
+- Implementation approach: add `use_pre_norm` (bool, default False) and `layers_per_block` (int, default 1) to TarFlowBlock and TarFlow
+- Refactored single attn+ffn into nn.ModuleList of layers (each layer = nn.ModuleDict with attn, attn_norm, attn_dropout, ffn, ffn_norm)
+- Post-norm path (use_pre_norm=False, layers_per_block=1): mathematically identical to original code — verified by test 1
+- Pre-norm path: apply LayerNorm BEFORE sublayer; add final_norm after all sublayers
+- Both _run_transformer and _run_transformer_output_shift updated with same logic
+- Backward compat default: use_pre_norm=False, layers_per_block=1 → original behavior
+- DEFAULT_CONFIG updated with "use_pre_norm": False, "layers_per_block": 1
+- TarFlow constructor call in train.py updated to pass both new params
+- Unit tests written in src/test_hyp009.py — 6/6 passed
+
+### INTENTION (write-before-execute): Phase 1 validation run
+- Config: use_pre_norm=True, layers_per_block=2, dropout=0.0, n_blocks=4, d_model=256
+- Run on cuda:8 (test GPU), 5k steps
+- Expect VF >= 90% (this is the architectural fix that should close the 56pp gap)
+- If VF < 90%: investigate further
+
+### Phase 1 Investigation Results — Continued (context restored 2026-03-05)
+
+Phase 1 gate runs completed (from prior context):
+1. ldr=0.0, pre-norm, lpb=2: VF=14.4%, log_det/dof→1.5+ (exploded)
+2. ldr=5.0, pre-norm, lpb=2: VF=28.4%, log_det/dof=0.09, best at step 3000
+
+Phase 1 gate (VF>=90%) NOT MET. Key finding: pre-norm + lpb=2 gives ~28% VF, same as
+hyp_008 post-norm + lpb=1 (~27-39%). Architectural changes are not the bottleneck.
+
+Root cause re-analysis:
+- Apple achieves 96.2% VF at T=9 with ldr=0.0 — NO regularization needed
+- Our model needs ldr=5.0 to prevent logdet explosion
+- With ldr=5.0: log_det/dof=0.09 (nearly volume-preserving) vs Apple log_det/dof~2.39
+- Root cause: affine convention. Apple: z=exp(-xa)*(x-xb) (contraction in fwd → naturally bounded logdet). Our model: y=exp(log_scale)*x+shift (expansion in fwd → unbounded logdet)
+- The clamping (alpha=10.0) is too loose to prevent explosion at ldr=0.0
+- With ldr=5.0, model is too constrained to learn the distribution properly
+
+INTENTION (write-before-execute): Diagnostic runs to confirm hypothesis
+- Run 1: Post-norm baseline (ldr=5.0): VF gap vs hyp_009 ldr=5.0 tells us if pre-norm helps at all
+- Run 2: Pre-norm + ldr=1.0: If ldr=5.0 over-constrains, lower ldr should improve VF
+- Both on cuda:9 (test GPU — GPU 8 occupied), 5k steps each
+- Expect: if pre-norm helps, Run 1 should show lower VF than Run 2
+- Expect: if lower ldr helps, Run 2 should show higher VF than ldr=5.0 run (28.4%)
+
+### New Files Created
+- `src/test_hyp009.py` — unit tests for pre-norm + layers_per_block
+- `experiments/hypothesis/hyp_009_arch_alignment/reports/plan_report.md`
+- `experiments/hypothesis/hyp_009_arch_alignment/angles/sanity/val/config_phase1_ethanol.json`
+- `experiments/hypothesis/hyp_009_arch_alignment/angles/sanity/val/config_phase1_ethanol_ldr5.json`
+- `experiments/hypothesis/hyp_009_arch_alignment/angles/sanity/val/config_phase1_postnorm_comparison.json`
+- `experiments/hypothesis/hyp_009_arch_alignment/angles/sanity/val/config_ldr_sweep.json`
+- `experiments/hypothesis/hyp_009_arch_alignment/angles/sanity/diag/config_postnorm_ldr5.json`
+- `experiments/hypothesis/hyp_009_arch_alignment/angles/sanity/diag/config_prenorm_ldr1.json`
+- `experiments/hypothesis/hyp_009_arch_alignment/run_diag.py`
+
+### Diagnostic Run Results (2026-03-05 16:20-16:28)
+
+Run results (5k steps each, cuda:9):
+1. post-norm + lpb=1 + ldr=5.0: VF=29.8%, val_loss best at step unknown
+2. pre-norm + lpb=2 + ldr=1.0: VF=34.0%, val_loss=1.52 at step 2400 (worse than ldr=5.0!)
+
+KEY FINDING: pre-norm vs post-norm = 1.4pp difference (29.8% vs 28.4%)
+- Pre-norm is NOT the bottleneck
+- Reducing ldr (1.0 vs 5.0) gives only 5.6pp improvement
+- With ldr=1.0, val_loss WORSENS (1.52 vs 1.29) despite VF improvement
+- Pattern consistent with PARTIAL exploitation: lower ldr lets model use log_det to
+  expand coordinates, giving better atom distances WITHOUT learning the distribution
+
+Root cause confirmed: affine convention allows log_det exploitation.
+- Our convention: y=exp(log_scale)*x+shift. Forward = expansion. log_det positive → reduces NLL.
+- Apple convention: z=exp(-xa)*(x-xb). Forward = contraction. logdet negative → increases NLL.
+- Fix: force log_scale <= 0 (contraction-only in forward). Equivalent to alpha_pos ~ 0.
+- Test: alpha_pos=0.001 (effectively 0), alpha_neg=10.0, ldr=0.0
+
+INTENTION (write-before-execute): Run contraction-only test on cuda:9
+- Config: alpha_pos=0.001, alpha_neg=10.0, ldr=0.0, pre-norm+lpb=2, T=9
+- Expect: VF >> 34% if contraction-only prevents exploitation and model can learn
+- If VF >= 90%: contraction-only is the fix, update sanity angle
+- If VF < 90%: investigate further
+
+### New Files Created (continued)
+- `experiments/hypothesis/hyp_009_arch_alignment/angles/sanity/diag/config_alpha_pos0.json` — contraction-only test
+- `experiments/hypothesis/hyp_009_arch_alignment/run_diag2.py`
+
+### Commits

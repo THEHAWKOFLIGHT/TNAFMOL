@@ -92,6 +92,10 @@ DEFAULT_CONFIG = {
     # hyp_008 per-dimension scale flag (default False for backward compatibility)
     "per_dim_scale": False,      # True = 3 independent scales per atom (Apple-style, hyp_008)
 
+    # hyp_009 architectural alignment flags (default values = backward compat)
+    "use_pre_norm": False,       # True = pre-norm LayerNorm (Apple TarFlow style, hyp_009)
+    "layers_per_block": 1,       # >1 = multiple attention+FFN sublayers per block (hyp_009)
+
     # Training
     "n_steps": 500,          # default: diagnostic run
     "batch_size": 128,
@@ -365,6 +369,8 @@ def train(cfg: dict):
         zero_padding_queries=cfg.get("zero_padding_queries", False),
         use_output_shift=cfg.get("use_output_shift", False),
         per_dim_scale=cfg.get("per_dim_scale", False),
+        use_pre_norm=cfg.get("use_pre_norm", False),
+        layers_per_block=cfg.get("layers_per_block", 1),
     ).to(device)
     cfg["n_atom_types"] = n_atom_types  # log to wandb config
 

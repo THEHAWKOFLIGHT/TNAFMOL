@@ -1,0 +1,63 @@
+{
+  "exp_id": "hyp_009",
+  "command": "OPTIMIZE",
+  "status": "completed",
+  "created": "2026-03-06T00:00:00Z",
+  "last_updated": "2026-03-06T12:00:00Z",
+  "machine": {
+    "host": "localhost",
+    "user": "kai_nelson",
+    "gpu": "cuda:8",
+    "pid": null,
+    "claude_session_id": null
+  },
+  "artifacts": {
+    "dataset": "data/",
+    "checkpoints": ["angles/sanity/val/best.pt"],
+    "raw_outputs": ["angles/sanity/val/raw/"]
+  },
+  "steps": [
+    {
+      "name": "implementation",
+      "status": "completed",
+      "acceptance": "src/model.py updated with use_pre_norm and layers_per_block; src/train.py updated with new config params; all unit tests pass",
+      "completed_at": "2026-03-06T01:00:00Z"
+    },
+    {
+      "name": "phase1_val_run",
+      "status": "completed",
+      "acceptance": "Training run on ethanol T=9 with use_pre_norm=True, layers_per_block=2, dropout=0.0 complete; VF=14%",
+      "result": {"valid_fraction": 0.14},
+      "completed_at": "2026-03-06T02:00:00Z"
+    },
+    {
+      "name": "phase1_gate_check",
+      "status": "completed",
+      "acceptance": "Phase 1 gate FAILED: VF=14% < 90%. Investigation documented. Incremental patching strategy abandoned.",
+      "result": {"gate_passed": false, "vf": 0.14, "target": 0.90},
+      "completed_at": "2026-03-06T03:00:00Z"
+    },
+    {
+      "name": "phase2_padding_validation",
+      "status": "skipped",
+      "reason": "Phase 1 gate failed — VF=14% (target 90%). Experiment terminated."
+    },
+    {
+      "name": "phase3_optimize",
+      "status": "skipped",
+      "reason": "Phase 1 gate failed — VF=14% (target 90%). Experiment terminated."
+    },
+    {
+      "name": "source_integration",
+      "status": "completed",
+      "acceptance": "No .py files in experiment dir; cleanup done during merge prep",
+      "completed_at": "2026-03-06T12:00:00Z"
+    },
+    {
+      "name": "merge_and_tag",
+      "status": "completed",
+      "acceptance": "Merged to main with tag hyp_009 as FAILURE",
+      "completed_at": "2026-03-06T12:00:00Z"
+    }
+  ]
+}
