@@ -36,11 +36,40 @@ INTENTION (write-before-execute):
 
 ### Commits
 - `157e1ba` — [hyp_011] config: pre-run snapshot for Phase 2 HEURISTICS sweep
+- `97f287c` — [hyp_011] docs: log Phase 2 HEURISTICS sweep launch intent
+- `e5765e4` — [hyp_011] results: Phase 2 HEURISTICS sweep complete — best mean VF=91.1% (lr=5e-4,ldr=2,ns=0.03)
+- `753977a` — [hyp_011] config: pre-run snapshot for Phase 2 HEURISTICS full run (best config from sweep)
 
 ### Notes
-- Sweep launched at 02:34 AM (local time)
-- Expected completion: ~05:45 AM (3 hours for 5 batches x 31 min)
-- Monitor: tail -f experiments/hypothesis/hyp_011_crack_md17_multimol/angles/heuristics/sweep/logs/sweep_master.log
+- Sweep launched at 02:34 AM (local time), completed at ~06:15 AM (5 batches x ~37 min)
+- All 27 runs hit W&B artifact naming error at the end (slashes in stage field) but saved mol_results.pt before crash
+- Results recovered from mol_results.pt files — all 27 runs confirmed complete
+- Full run launched on GPU 4 at 06:15 AM (50k steps, CUDA_VISIBLE_DEVICES=4)
+- W&B sweep run: https://wandb.ai/kaityrusnelson1/tnafmol/runs/cccn9pav (run_01, batch 1)
+- W&B full run: https://wandb.ai/kaityrusnelson1/tnafmol/runs/xo61cylz
+
+### Phase 2 Sweep Results (Complete)
+| Rank | LR | LDR | Noise | Mean VF | vs baseline |
+|------|-----|-----|-------|---------|-------------|
+| 1 | 5e-4 | 2.0 | 0.03 | 91.1% | +7.2pp |
+| 2 | 5e-4 | 0.0 | 0.03 | 90.5% | +6.6pp |
+| 3 | 3e-4 | 2.0 | 0.03 | 89.8% | +5.9pp |
+| 4 | 5e-4 | 5.0 | 0.03 | 89.4% | +5.5pp |
+| 5 | 3e-4 | 0.0 | 0.03 | 89.1% | +5.2pp |
+Key findings: noise_sigma=0.03 consistently best; lr=1e-4 underfits (aspirin collapses to 18%); noise_sigma=0.10 catastrophic
+
+### Phase 2 Full Run Results (50k steps, best config: lr=5e-4, ldr=2.0, ns=0.03)
+| Molecule | Phase 2 Full | Phase 1 Run B | Delta |
+|----------|-------------|--------------|-------|
+| aspirin | 88.8% | 70.6% | +18.2pp |
+| benzene | 99.8% | 97.2% | +2.6pp |
+| ethanol | 82.4% | 72.4% | +10.0pp |
+| malonaldehyde | 99.8% | 97.0% | +2.8pp |
+| naphthalene | 99.6% | 91.0% | +8.6pp |
+| salicylic_acid | 90.4% | 67.6% | +22.8pp |
+| toluene | 100.0% | 91.0% | +9.0pp |
+| uracil | 96.8% | 84.2% | +12.6pp |
+| **Mean** | **94.7%** | **83.9%** | **+10.8pp** |
 
 ---
 
