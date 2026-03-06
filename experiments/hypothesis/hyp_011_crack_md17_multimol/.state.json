@@ -1,0 +1,67 @@
+{
+  "exp_id": "hyp_011",
+  "command": "OPTIMIZE",
+  "status": "in_progress",
+  "created": "2026-03-06T12:00:00Z",
+  "last_updated": "2026-03-06T12:00:00Z",
+  "machine": {
+    "host": "localhost",
+    "user": "kai_nelson",
+    "gpu": "cuda:4,cuda:7",
+    "pid": null,
+    "claude_session_id": null
+  },
+  "artifacts": {
+    "dataset": "data/",
+    "checkpoints": [],
+    "raw_outputs": []
+  },
+  "steps": [
+    {
+      "name": "diagnostic",
+      "status": "completed",
+      "acceptance": "Diagnostic based on hyp_010 results — gap analysis already done in task brief",
+      "completed_at": "2026-03-06T12:00:00Z"
+    },
+    {
+      "name": "plan",
+      "status": "pending",
+      "acceptance": "Plan Sub-report written and Postdoc-approved"
+    },
+    {
+      "name": "angle_sanity_val_runA",
+      "status": "pending",
+      "acceptance": "Run A (50k steps, channels=256, blocks=4) complete with VF evaluation"
+    },
+    {
+      "name": "angle_sanity_val_runB",
+      "status": "pending",
+      "acceptance": "Run B (20k steps, channels=384, blocks=6) complete with VF evaluation"
+    },
+    {
+      "name": "angle_heuristics_sweep",
+      "status": "pending",
+      "acceptance": "W&B sweep over lr/ldr/noise_sigma completed; best config selected"
+    },
+    {
+      "name": "angle_heuristics_full",
+      "status": "pending",
+      "acceptance": "Full training run with best sweep config; VF evaluated on all 8 molecules"
+    },
+    {
+      "name": "angle_scale_full",
+      "status": "pending",
+      "acceptance": "Large model (channels=512, blocks=8) trained 100k steps; VF evaluated"
+    },
+    {
+      "name": "source_integration",
+      "status": "pending",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice"
+    },
+    {
+      "name": "merge_and_tag",
+      "status": "pending",
+      "acceptance": "Merged to main with tag hyp_011; pre-merge checks pass"
+    }
+  ]
+}
