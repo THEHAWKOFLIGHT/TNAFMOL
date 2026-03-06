@@ -1,9 +1,9 @@
 {
   "exp_id": "hyp_011",
   "command": "OPTIMIZE",
-  "status": "in_progress",
+  "status": "completed",
   "created": "2026-03-06T12:00:00Z",
-  "last_updated": "2026-03-06T20:00:00Z",
+  "last_updated": "2026-03-06T23:30:00Z",
   "machine": {
     "host": "localhost",
     "user": "kai_nelson",
@@ -16,12 +16,16 @@
     "checkpoints": [
       "angles/sanity/val/best.pt",
       "angles/sanity/diag/best.pt",
-      "angles/heuristics/full/best.pt"
+      "angles/heuristics/full/best.pt",
+      "angles/heuristics/full/final.pt",
+      "angles/scale/full/best.pt",
+      "angles/scale/full/final.pt"
     ],
     "raw_outputs": [
       "angles/sanity/val/raw/",
       "angles/sanity/diag/raw/",
-      "angles/heuristics/full/raw/"
+      "angles/heuristics/full/raw/",
+      "angles/scale/full/raw/"
     ]
   },
   "steps": [
@@ -66,14 +70,24 @@
       "completed_at": "2026-03-06T18:00:00Z"
     },
     {
+      "name": "angle_scale_temp_sweep_phase2",
+      "status": "completed",
+      "acceptance": "Temperature sweep on Phase 2 checkpoint; best temperature identified",
+      "result": {"best_temperature": 0.8, "best_mean_vf": 0.959},
+      "completed_at": "2026-03-06T20:30:00Z"
+    },
+    {
       "name": "angle_scale_full",
-      "status": "in_progress",
-      "acceptance": "Large model or temperature sweep; VF evaluated on all 8 molecules"
+      "status": "completed",
+      "acceptance": "SCALE full run (512ch, 8blk, 50k steps) complete; VF evaluated on all 8 molecules",
+      "result": {"mean_vf_t1": 0.974, "mean_vf_t07": 0.989, "best_temperature": 0.7},
+      "completed_at": "2026-03-06T22:30:00Z"
     },
     {
       "name": "source_integration",
-      "status": "pending",
-      "acceptance": "No .py files in experiment dir; src/ reflects current practice"
+      "status": "completed",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice",
+      "completed_at": "2026-03-06T23:00:00Z"
     },
     {
       "name": "merge_and_tag",

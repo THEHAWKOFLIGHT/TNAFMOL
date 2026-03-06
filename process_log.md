@@ -1656,3 +1656,43 @@ Phase 3 SANITY PASSED. HEURISTICS and SCALE skipped — primary criterion exceed
 - `b5de8aa` — [hyp_010] config: pre-run snapshot for Phase 3 multi-molecule full run
 - `c9c3133` — [hyp_010] docs: log Phase 3 Slurm job ID and update process_log
 - `39cc986` — [hyp_010] docs: add hyp_009 and hyp_010 entries to experiment_log
+
+---
+
+## 2026-03-06 — hyp_011 Phase 3: SCALE + Temperature Sweeps + Final Report
+**Branch:** `exp/hyp_011`
+
+### Decisions & Reasoning
+
+**Temperature sweep on Phase 2 checkpoint first:** Before training the larger SCALE model, ran a free temperature sweep on the Phase 2 checkpoint (384ch, 6blk, 21.4M). Results showed T=0.8 gives 95.9% mean VF vs 94.4% at T=1.0. Best gain is on aspirin (+7.8pp at T=0.8). This informs whether temperature tuning matters before committing to expensive training.
+
+**SCALE training config:** Used same HPs as Phase 2 best config (lr=5e-4, ldr=2.0, ns=0.03) but scaled to 512ch, 8blk. Warmup increased to 1000 steps (from 500) to accommodate larger model. n_steps=50000 (same as Phase 2 — not 100k as originally planned in spec, but Phase 2 showed 50k is sufficient for convergence at this model size).
+
+**n_params note:** The plan predicted ~25M params; actual is ~50.6M. The in_channels=3 (not hidden_dim) combined with the expansion factor and per-block overhead explains the discrepancy. The model is larger than expected but fits in 49GB VRAM.
+
+**Temperature sweep on SCALE:** Best T=0.7 gives 98.9% mean VF. The SCALE model benefits uniformly from lower temperature (all molecules improve). This matches the intuition that larger models learn tighter distributions; sampling slightly cooler extracts cleaner samples.
+
+**Final best result:** SCALE checkpoint at T=0.7 = 98.9% mean VF (all 8 > 95%). This essentially matches the und_001 per-molecule ceiling of 98.2%.
+
+**Source integration cleanup:** Removed disposable scripts from experiment directory and project root: eval_temp_sweep.py (experiment dir), run_sweep.sh (experiment dir), collect_sweep_results.py (project root), gen_sweep_configs.py (project root), save_sweep_summary.py (project root), launch_hyp011.sh (project root). None were tracked by git.
+
+### New Files Created
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/eval_temp_sweep.py` — disposable temp sweep script (REMOVED during cleanup)
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/config/config_scale_full.json` — Phase 3 SCALE training config
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/scale/temp_sweep_results.json` — Phase 2 checkpoint temperature sweep
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/scale/temp_sweep_results_scale.json` — SCALE checkpoint temperature sweep
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/scale/full/config.json` — SCALE full run config (auto-saved by train_apple.py)
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/scale/full/hyp_011_loss_curve.png` — SCALE loss curve
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/scale/full/hyp_011_vf_bar.png` — SCALE VF bar chart
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/angles/scale/full/raw/mol_results.pt` — SCALE per-molecule VF results
+- `experiments/hypothesis/hyp_011_crack_md17_multimol/reports/final_report.md` — Final experiment report
+
+### W&B Runs
+- Phase 2 temp sweep: eval-only (no W&B run — script is standalone)
+- Phase 3 SCALE: https://wandb.ai/kaityrusnelson1/tnafmol/runs/z7dwsfdj
+- SCALE temp sweep: eval-only (no W&B run — script is standalone)
+
+### Commits
+- `73c4db3` — [hyp_011] results: Phase 3 temp sweep — best temp=0.8, mean VF=95.9%
+- `facb763` — [hyp_011] results: Phase 3 SCALE complete — mean VF=97.4% (T=1.0), 98.9% (T=0.7)
+- (final report and cleanup commits — in progress)
