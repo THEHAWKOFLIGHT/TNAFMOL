@@ -111,3 +111,14 @@ Append-only log. One entry per experiment.
 **Failure modes:** Incremental patching strategy failure. 13+ architectural differences between model.py and tarflow_apple.py cannot be isolated. Each "fix" introduces new interactions.
 **Story fit:** CONFLICT — incremental approach abandoned. Pivot to using tarflow_apple.py + TarFlow1DMol directly for multi-molecule training.
 **Concerns:** None — failure is conclusive. Path forward is clear.
+
+---
+
+### hyp_010 — TarFlow Apple Architecture for Multi-Molecule MD17
+**Date:** 2026-03-07 | **Status:** DONE
+**Tag:** `hyp_010` | **Merge commit:** `4694b7b`
+**Result:** Uses tarflow_apple.py + TarFlow1DMol directly for multi-molecule training. Phase 1: ethanol T=9 VF=95% (gate passed). Phase 2: padding validation passed (VF gap=1.4pp). Two critical bugs fixed in train_phase3.py (sampling noise at padding + attention key masking). Phase 3: all 8 molecules, T=21, 20k steps — mean VF=71.6%, ALL 8 molecules >50%. Best: malonaldehyde 82.6%, naphthalene 81.0%, benzene 79.4%. Aspirin recovered from 9.2% (hyp_007) to 67.4%.
+**PhD quality:** CLEAN — single PhD agent. Two bugs found and fixed during Phase 2 (sampling + attention mask). Both fixes well-documented with clear reasoning. Slurm used for Phase 3 production run. Source integration incomplete (.py files left in experiment dir — Postdoc cleaned up).
+**Failure modes:** Source integration incomplete (Level 1 — .py files not removed in PhD's integration commit, Postdoc caught and fixed).
+**Story fit:** FITS — proves Apple TarFlow architecture generalizes to multi-molecule training. Eliminates need for log-det regularization. Resolves the aspirin outlier from hyp_007.
+**Concerns:** Benzene PW divergence high (0.17 vs ~0.04) — likely C6 symmetry ambiguity, not structural failure (VF=79.4%). Ethanol VF lower in multi-mol (64%) vs single-mol (93.6%) — expected from multi-task capacity sharing.

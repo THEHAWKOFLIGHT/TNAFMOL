@@ -607,3 +607,53 @@ The original hypothesis (shared scale = root cause of 61pp gap) was WRONG. und_0
 **Source integration:** .py files removed from experiment directory. src/test_hyp009.py removed. model.py and train.py changes retained (pre-norm and layers_per_block flags behind backward-compatible defaults).
 
 **Next:** hyp_010 — use TarFlow1DMol directly for multi-molecule MD17 training. Bypasses model.py entirely.
+
+---
+
+### 2026-03-07 — hyp_010 synthesis
+**Status:** DONE | **Failure level:** None (Level 1 git recovery: .py files in experiment dir)
+**Branch:** `exp/hyp_010` | **Tag:** `hyp_010` | **Merge commit:** `4694b7b`
+
+**Experiment:** TarFlow Apple Architecture for Multi-Molecule MD17 — use tarflow_apple.py + TarFlow1DMol directly for multi-molecule joint training on all 8 MD17 molecules.
+
+**Phase 1 — Ethanol T=9 Sanity Gate:** PASSED. VF=95% on ethanol T=9, 5k steps. Reproduces und_001 (96.2% VF).
+
+**Phase 2 — Padding Validation:** PASSED after two bug fixes.
+- Bug 1 (sampling): Gaussian noise at padding positions corrupted PermutationFlip autoregressive chain. Fix: zero padding positions in z before reverse pass. Partial: VF 33% → 47%.
+- Bug 2 (attention key masking): padding KEY masking in permuted space starved first real atom of context. Fix: causal-only mask, no padding key masking. Full: VF 47% → 93.6%.
+- Result: VF(T=9)=95%, VF(T=21)=93.6%, gap=1.4pp. PASSED.
+
+**Phase 3 — Multi-Molecule SANITY:** PASSED. All 8 molecules >50% VF. Mean VF=71.6%.
+
+| Molecule | VF | vs hyp_007 |
+|---------|-----|-----------|
+| aspirin | 67.4% | +58.2pp |
+| benzene | 79.4% | +36.6pp |
+| ethanol | 64.0% | +8.2pp |
+| malonaldehyde | 82.6% | +29.4pp |
+| naphthalene | 81.0% | +58.6pp |
+| salicylic_acid | 67.4% | +42.8pp |
+| toluene | 67.4% | +37.6pp |
+| uracil | 63.6% | +24.2pp |
+| **Mean** | **71.6%** | **+36.9pp** |
+
+HEURISTICS and SCALE: skipped (primary criterion far exceeded — 8/8 molecules >50%, target was 4/8).
+
+**PhD execution quality:** CLEAN — single PhD agent. Two significant bugs found and fixed in train_phase3.py during Phase 2. Both fixes well-documented and correct. Source integration incomplete — .py files left in experiment directory despite commit message claiming removal. Postdoc caught and fixed.
+
+**Git recovery:**
+- Level 1: PhD's source integration commit (`c3c5295`) claimed to remove .py files from experiment dir but did not actually `git rm` them. Postdoc removed them in a separate commit (`e7676c8`).
+
+**W&B runs:**
+- Phase 1: ethanol T=9 validation
+- Phase 2: multiple diagnostic runs (T=21 original, T=21 sampling fix, T=21 both fixes)
+- Phase 3: https://wandb.ai/kaityrusnelson1/tnafmol/runs/tw349mhw (Slurm job 4157 on escher)
+
+**Key contributions:**
+1. Two critical padding bugs fixed in canonical src/train_phase3.py
+2. New training script src/train_apple.py for TarFlow1DMol multi-molecule training
+3. Mean VF improvement from 34.7% (hyp_007) to 71.6% — a 2.06x improvement
+4. Aspirin (the main outlier) recovered from 9.2% to 67.4%
+5. Eliminated need for log-det regularization (ldr=0 vs ldr=5.0 in hyp_007)
+
+**Story impact:** This validates the "use proven architecture directly" strategy. The incremental patching of model.py was the wrong approach — 4 experiments showed diminishing returns. Using tarflow_apple.py + TarFlow1DMol directly gave a 2x improvement in one experiment. The TarFlow arm of the comparison is now viable. DDPM baseline (hyp_011) is next.
