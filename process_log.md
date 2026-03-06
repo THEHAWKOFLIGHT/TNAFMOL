@@ -42,7 +42,8 @@ INTENTION (write-before-execute):
 - `experiments/hypothesis/hyp_011_crack_md17_multimol/reports/plan_report.md` — Phase 2/3 plan report
 
 ### Commits
-*(to be filled after commits)*
+- `bdc2d47` — [hyp_011] config: pre-run snapshot for sanity val Phase 1
+- `060e3fb` — [hyp_011] results: Phase 1 SANITY complete — Run B mean VF=83.9%, Run A=73.3% (toluene collapse)
 
 ### Notes
 - W&B project: tnafmol, group: hyp_011
