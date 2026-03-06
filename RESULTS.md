@@ -1,8 +1,8 @@
 # TNAFMOL — Results
-**Last updated:** 2026-03-06 after hyp_008
+**Last updated:** 2026-03-06 after hyp_009
 
 ## Status
-Per-dimension scale (hyp_008) confirmed to have <1pp effect on VF — the 61pp gap between model.py and tarflow_apple.py is driven by architectural differences (post-norm vs pre-norm, layers_per_block=1 vs 2), not scale parameterization. Best multi-molecule result remains hyp_007: 55.8% ethanol, 34.7% mean VF, 2/8 above 50%.
+Incremental patching of model.py to match tarflow_apple.py is EXHAUSTED after 4 experiments (hyp_006–hyp_009). hyp_009 (pre-norm + layers_per_block=2) gave 14% VF — WORSE than baseline. Pivoting to use tarflow_apple.py + TarFlow1DMol directly for multi-molecule training. Best multi-molecule result remains hyp_007: 55.8% ethanol, 34.7% mean VF, 2/8 above 50%.
 
 ## Experiments
 
@@ -16,7 +16,8 @@ Per-dimension scale (hyp_008) confirmed to have <1pp effect on VF — the 61pp g
 | hyp_005 | Padding-Aware TarFlow (PAD token + query zeroing) | 4.7% (ethanol) | Padding fixes have zero effect; log-det exploitation persists | FAILURE |
 | hyp_006 | Output-Shift TarFlow (Apple architecture) | 24.8% (ethanol) | Hypothesis CONFIRMED: log-det exploitation eliminated. VF plateau at 13-25%. | FAILURE |
 | hyp_007 | Output-Shift + ldr=5.0 + 20k steps | 55.8% (ethanol), 34.7% mean | Padding neutral (4pp drop). ldr=5.0 critical. 2/8 molecules above 50%. | PARTIAL |
-| **hyp_008** | **Per-dim scale (3 log_scales/atom)** | **39.2% (ethanol, T=9)** | **<1pp effect vs shared scale (und_001 Phase 4). True gap: pre-norm + layers_per_block.** | **FAILURE** |
+| hyp_008 | Per-dim scale (3 log_scales/atom) | 39.2% (ethanol, T=9) | <1pp effect vs shared scale (und_001 Phase 4). True gap: pre-norm + layers_per_block. | FAILURE |
+| **hyp_009** | **Pre-norm + layers_per_block=2** | **14% (ethanol, T=9)** | **WORSE than baseline (39%). Incremental patching exhausted.** | **FAILURE** |
 
 ## Best Result
 **und_001:** Architecture ceiling = 98.2% mean VF across all 8 molecules with T=n_real (no padding). Range: 94.3% (aspirin) to 100% (naphthalene, benzene).
@@ -24,4 +25,4 @@ Per-dimension scale (hyp_008) confirmed to have <1pp effect on VF — the 61pp g
 **hyp_007 (multi-molecule with output-shift + ldr=5.0):** Best VF=55.8% on ethanol, 53.2% on malonaldehyde, 42.8% benzene, 39.4% uracil, 29.8% toluene, 24.6% salicylic acid, 22.4% naphthalene, 9.2% aspirin. Mean VF=34.7%. Config: ldr=5.0, lr=3e-4, cosine, 20k steps, d_model=128, n_blocks=8. Best checkpoint at step 12000.
 
 ## What's Next
-The 61pp gap between model.py (39% VF) and tarflow_apple.py (96% VF) on single-molecule ethanol T=9 is architectural: (A) pre-norm instead of post-norm, (B) layers_per_block=2 (2 attention layers per flow block vs our 1). Next experiment should add these to model.py and verify T=9 VF >= 90%, then proceed to multi-molecule. DDPM baseline still planned after TarFlow reaches parity.
+hyp_010: Use tarflow_apple.py + TarFlow1DMol (the und_001 architecture that achieves 96-98% VF per-molecule) directly for multi-molecule joint training on all 8 MD17 molecules. This bypasses model.py entirely. Goal: VF >= 50% on >= 4/8 molecules.

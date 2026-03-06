@@ -100,3 +100,14 @@ Append-only log. One entry per experiment.
 **Failure modes:** Incorrect root cause hypothesis — per-dim scale was not the primary gap. The spec incorrectly attributed the 61pp VF gap to scale parameterization.
 **Story fit:** PARTIAL FIT — per_dim_scale implementation is correct and retained (aligns with Apple). Hypothesis was wrong but corrective diagnosis is sound.
 **Concerns:** The true architectural gaps (pre-norm, layers_per_block) were documented in und_001 source_comparison.md but not incorporated into hyp_008 diagnostic design.
+
+---
+
+### hyp_009 — Architecture Alignment (Pre-Norm + Layers Per Block)
+**Date:** 2026-03-06 | **Status:** FAILURE
+**Tag:** `hyp_009` | **Merge commit:** `6dbc21e`
+**Result:** Pre-norm + layers_per_block=2 added to model.py. Phase 1 gate FAILED: VF=14% on ethanol T=9 (target 90%) — WORSE than post-norm baseline (39%). Multiple diagnostic runs (ldr sweep, contraction-only) unable to recover performance. Incremental patching of model.py exhausted after 4 experiments (hyp_006–hyp_009).
+**PhD quality:** CLEAN — implementation correct, unit tests pass. Failure is at the experimental hypothesis level, not implementation.
+**Failure modes:** Incremental patching strategy failure. 13+ architectural differences between model.py and tarflow_apple.py cannot be isolated. Each "fix" introduces new interactions.
+**Story fit:** CONFLICT — incremental approach abandoned. Pivot to using tarflow_apple.py + TarFlow1DMol directly for multi-molecule training.
+**Concerns:** None — failure is conclusive. Path forward is clear.

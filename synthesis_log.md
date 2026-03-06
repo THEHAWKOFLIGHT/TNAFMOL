@@ -589,3 +589,21 @@ The original hypothesis (shared scale = root cause of 61pp gap) was WRONG. und_0
 - Phase 1 (4 runs): mpx5bh9g, nn0weqoy, pwdbuaf0, sr581ia3
 
 **Story impact:** The experiment's hypothesis was wrong — per_dim_scale is not the root cause of the VF gap. The true gap is architectural (pre-norm + layers_per_block). This does NOT change the project's long-term viability — tarflow_apple.py achieves 96% VF at T=9, proving the architecture works. The path forward is to bring model.py closer to tarflow_apple.py's architecture (pre-norm, layers_per_block=2), not just its parameterization. RESEARCH_STORY.md updated.
+
+---
+
+### 2026-03-06 — hyp_009 synthesis
+**Status:** FAILURE | **Failure level:** None
+**Branch:** `exp/hyp_009` | **Tag:** `hyp_009` | **Merge commit:** `6dbc21e`
+
+**Experiment:** Architecture Alignment — add pre-norm + layers_per_block=2 to model.py, validate on ethanol T=9.
+
+**Result:** Phase 1 gate FAILED. Pre-norm + layers_per_block=2 gave 14% VF on ethanol T=9 — WORSE than post-norm baseline (39%). Multiple diagnostic runs unable to recover. This is the 4th consecutive experiment (hyp_006 through hyp_009) attempting to incrementally patch model.py to match tarflow_apple.py. Each identified a "root cause" but VF never closed the gap.
+
+**Decision:** Incremental patching strategy ABANDONED. The two architectures diverge in 13+ ways that cannot be isolated individually. The correct approach: use tarflow_apple.py + TarFlow1DMol (proven 96-98% VF in und_001) directly for multi-molecule training.
+
+**PhD execution quality:** CLEAN — implementation correct, unit tests passed. Failure is hypothesis-level, not implementation.
+
+**Source integration:** .py files removed from experiment directory. src/test_hyp009.py removed. model.py and train.py changes retained (pre-norm and layers_per_block flags behind backward-compatible defaults).
+
+**Next:** hyp_010 — use TarFlow1DMol directly for multi-molecule MD17 training. Bypasses model.py entirely.
