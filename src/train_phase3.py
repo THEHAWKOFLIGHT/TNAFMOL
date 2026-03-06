@@ -546,8 +546,28 @@ class TarFlow1DMol(nn.Module):
         atom_types: torch.Tensor | None = None,
         padding_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """Reverse pass (latent → data)."""
+        """Reverse pass (latent → data).
+
+        CRITICAL: If padding_mask is provided, padding positions in x must already
+        be zeroed before calling this method (done in sample()). The padding zeros
+        are maintained between block calls to prevent padding noise from corrupting
+        real atom generation in PermutationFlip blocks.
+
+        In PermutationFlip blocks, the sequence is reversed so padding atoms appear
+        at the BEGINNING of the autoregressive chain. If padding positions contain
+        nonzero noise, that noise propagates into all subsequent real atom positions.
+        Zeroing padding positions in the latent and between blocks matches the
+        forward pass where z_pad = 0 exactly (enforced by mask_perm zeroing).
+        """
         x = x * self.var.sqrt()
+
+        # Zero out padding positions immediately after scaling.
+        # This matches the forward pass where z_pad = 0 for all padding atoms.
+        # Without this, padding Gaussian noise propagates into real atom generation
+        # through the autoregressive chain in PermutationFlip blocks.
+        if self.use_padding_mask and padding_mask is not None:
+            mask_3d = padding_mask.float().unsqueeze(-1)
+            x = x * mask_3d
 
         cond = None
         if self.use_atom_type_cond and atom_types is not None and self.atom_emb is not None:
@@ -563,10 +583,12 @@ class TarFlow1DMol(nn.Module):
             else:
                 x = block.reverse(x)
 
-        # Zero out padding atoms in generated samples
-        if self.use_padding_mask and padding_mask is not None:
-            mask_3d = padding_mask.float().unsqueeze(-1)
-            x = x * mask_3d
+            # Re-zero padding positions after each block.
+            # Each block's reverse() uses the full T-length tensor as KV cache input,
+            # so padding positions in the output of one block become inputs to the next.
+            # Zeroing between blocks keeps the padding zone clean throughout the chain.
+            if self.use_padding_mask and padding_mask is not None:
+                x = x * mask_3d
 
         return x
 
@@ -579,8 +601,20 @@ class TarFlow1DMol(nn.Module):
         padding_mask: torch.Tensor | None = None,
         temp: float = 1.0,
     ) -> torch.Tensor:
-        """Sample n sequences."""
+        """Sample n sequences.
+
+        Padding positions in the latent z are zeroed before the reverse pass
+        to match the forward pass convention (z_pad = 0 exactly).
+        """
         z = torch.randn(n, self.seq_length, self.in_channels, device=device) * temp
+
+        # Zero padding positions in latent immediately — before any reverse pass.
+        # This ensures PermutationFlip blocks see zeros at padding positions,
+        # which is what was learned during training (z_pad = 0 in forward).
+        if self.use_padding_mask and padding_mask is not None:
+            mask_3d = padding_mask.float().unsqueeze(-1)
+            z = z * mask_3d
+
         return self.reverse(z, atom_types=atom_types, padding_mask=padding_mask)
 
 
