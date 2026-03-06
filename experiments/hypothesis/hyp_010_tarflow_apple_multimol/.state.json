@@ -89,8 +89,12 @@
     },
     {
       "name": "source_integration",
-      "status": "pending",
-      "acceptance": "No .py files in experiment dir; src/ reflects current practice; pre-merge checks pass"
+      "status": "completed",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice; pre-merge checks pass",
+      "completed_at": "2026-03-07T02:30:00Z",
+      "result": {
+        "note": "N/A — all new code (train_apple.py, train_phase3.py fixes) already in src/. Removed verify_train_apple.py, eval_final_ckpt.py, diagnose_T21.py from experiment dir. Populated results/ with canonical plots."
+      }
     },
     {
       "name": "merge_and_tag",
