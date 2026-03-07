@@ -104,8 +104,13 @@
     },
     {
       "name": "source_integration",
-      "status": "pending",
-      "acceptance": "No .py files in experiment dir; src/ reflects current practice"
+      "status": "completed",
+      "acceptance": "No .py files in experiment dir; src/ reflects current practice",
+      "completed_at": "2026-03-06T17:10:00Z",
+      "result": {
+        "promoted": ["src/test_hyp012.py"],
+        "removed_from_experiment": ["test_permute_within_types.py", "make_comparison_plots.py"]
+      }
     },
     {
       "name": "merge_and_tag",
