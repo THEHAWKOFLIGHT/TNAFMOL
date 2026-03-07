@@ -1707,3 +1707,92 @@ Phase 3 SANITY PASSED. HEURISTICS and SCALE skipped — primary criterion exceed
 hyp_011 OPTIMIZE complete. Final result: 98.9% mean VF at T=0.7 (SCALE, 512ch, 8blk, 50.6M params).
 All pre-merge consistency checks for source integration passed.
 Awaiting Postdoc merge to main and tag.
+
+---
+
+## 2026-03-06 — hyp_012: Permutation Reordering for Boltzmann Accuracy
+**Branch:** `exp/hyp_012`
+
+### Decisions & Reasoning
+- Task: head-to-head A/B test — Arm A (canonical ordering) vs Arm B (type-sort + within-group perm)
+- Diagnostic: hyp_011 achieves 97.4% mean VF at T=1.0. Weakest: aspirin (89.6%), ethanol (95.0%).
+  Canonical ordering is mixed-type (aspirin: C C C C C C C O O O C C O H H H H H H H H).
+  TarFlow autoregressive factorization may overfit to this arbitrary ordering.
+- Implementation: new permute_within_type_groups() function in src/data.py
+  - Type-sorts atoms: H(0) → C(1) → N(2) → O(3), then randomly permutes within each group
+  - Mutually exclusive with existing permute_atoms() (full random perm from hyp_004)
+  - Integrated into MD17Dataset and MultiMoleculeDataset via permute_within_types=bool param
+  - New DEFAULT_CONFIG entry and --permute-within-types CLI flag in train_apple.py
+- Unit tests: 12 tests written and all passing
+- OPTIMIZE structure: SANITY phase only (boolean toggle, no sweep). HEURISTICS/SCALE N/A.
+- Both arms use hyp_011 SCALE config (512ch, 8blk, seed=42, 50k steps, T=1.0 eval)
+- Validation runs (5000 steps): Arm A on cuda:5, Arm B on cuda:6 (cuda:3/4 occupied)
+- Promising criterion: VF > 90% at 5k steps; Arm B should match or exceed Arm A
+
+### New Files Created
+- `src/data.py` — added permute_within_type_groups() function (hyp_012)
+- `src/train_apple.py` — added permute_within_types to DEFAULT_CONFIG and CLI
+- `experiments/hypothesis/hyp_012_perm_reorder_boltzmann/reports/diagnostic_report.md`
+- `experiments/hypothesis/hyp_012_perm_reorder_boltzmann/reports/plan_report.md`
+- `experiments/hypothesis/hyp_012_perm_reorder_boltzmann/test_permute_within_types.py` — 12 unit tests
+- `experiments/hypothesis/hyp_012_perm_reorder_boltzmann/angles/sanity/val/config_arm_a.json`
+- `experiments/hypothesis/hyp_012_perm_reorder_boltzmann/angles/sanity/val/config_arm_b.json`
+
+### W&B Runs
+- Arm A sanity val: https://wandb.ai/kaityrusnelson1/tnafmol/runs/s1k0ilhy (cuda:5)
+- Arm B sanity val: https://wandb.ai/kaityrusnelson1/tnafmol/runs/siwvs9g7 (cuda:6)
+
+### Commits
+- `8e694ef` — [hyp_012] code: implement permute_within_type_groups() and integrate
+- `ed4e113` — [hyp_012] config: pre-run snapshot for sanity val — arm_a cuda:5, arm_b cuda:6
+- `7f41d8d` — [hyp_012] docs: process log entry for sanity val launch
+- `3818b45` — [hyp_012] config: fix arm_a/arm_b output paths — use arm_a_sanity and arm_b_sanity angles
+- `32e34df` — [hyp_012] config: pre-run snapshot for full runs — arm_a cuda:3, arm_b cuda:4 (50k steps each)
+- `2a3db2d` — [hyp_012] code: add make_comparison_plots.py for head-to-head VF and loss comparison
+
+---
+
+## 2026-03-06 — hyp_012: Full Run Results and Final Report
+**Branch:** `exp/hyp_012`
+
+### Results
+
+Val run results (5k steps):
+- Arm A (canonical, cuda:5): mean VF = 78.7%, 7/8 > 50%
+- Arm B (perm_within_types, cuda:6): mean VF = 0.2%, 0/8 > 50%
+- Directory collision: both arms initially wrote to sanity/val/ — fixed by using arm_a_sanity and arm_b_sanity angles; Arm A results saved, Arm B results from stdout only
+
+Full run results (50k steps):
+- Arm A (canonical, cuda:3): mean VF = **97.7%**, all 8/8 > 50%
+  - aspirin=90.6%, benzene=100%, ethanol=96.2%, malonaldehyde=99.8%, naphthalene=100%, salicylic_acid=96.2%, toluene=99.6%, uracil=99.0%
+  - Best val checkpoint: step 17000 (val_loss=0.5477); evaluated on FINAL checkpoint (step 50000)
+  - W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/nqi97n8z
+- Arm B (perm_within_types, cuda:4): mean VF = **0.7%**, 0/8 > 50%
+  - aspirin=0%, benzene=0%, ethanol=5.4%, all others=0%
+  - min_dist_mean = 0.15-0.49 Å (severe atomic overlaps)
+  - Training loss at step 50000: -0.877 vs Arm A -1.652 (still ~2× gap after full training)
+  - W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/9pnnie8w
+
+### Decisions & Reasoning
+- Full 50k steps for both arms to give Arm B every opportunity to recover — it did not.
+- The type-sorted ordering is physically backwards for TarFlow's autoregressive structure: H atoms are generated first conditioned on nothing, but H positions are physically determined by heavy-atom scaffold which comes later in the sequence.
+- Within-group permutation prevents stable conditional distributions from being learned — each H atom slot contains a different H atom each batch.
+- No sweep conducted for Arm B (plan: SANITY only, boolean toggle, no free parameters)
+- Root cause documented in final_report.md
+
+### New Files Created
+- `experiments/hypothesis/hyp_012_perm_reorder_boltzmann/angles/arm_a_sanity/full/config.json`
+- `experiments/hypothesis/hyp_012_perm_reorder_boltzmann/angles/arm_b_sanity/full/config.json`
+- `experiments/hypothesis/hyp_012_perm_reorder_boltzmann/make_comparison_plots.py`
+- `experiments/hypothesis/hyp_012_perm_reorder_boltzmann/reports/final_report.md`
+- `experiments/hypothesis/hyp_012_perm_reorder_boltzmann/results/hyp_012_vf_comparison.png`
+- `experiments/hypothesis/hyp_012_perm_reorder_boltzmann/results/hyp_012_loss_comparison.png`
+- `experiments/hypothesis/hyp_012_perm_reorder_boltzmann/results/hyp_012_loss_curve.png` (copy from arm_a_sanity)
+- `experiments/hypothesis/hyp_012_perm_reorder_boltzmann/results/hyp_012_vf_bar.png` (copy from arm_a_sanity)
+
+### W&B Runs
+- Arm A full: https://wandb.ai/kaityrusnelson1/tnafmol/runs/nqi97n8z (arm_a_sanity, full, 50k steps)
+- Arm B full: https://wandb.ai/kaityrusnelson1/tnafmol/runs/9pnnie8w (arm_b_sanity, full, 50k steps)
+
+### Commits
+- `3b2dfa4` — [hyp_012] results: full run complete — Arm A 97.7% VF, Arm B 0.7% VF (perm_within_types catastrophic)

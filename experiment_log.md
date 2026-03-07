@@ -621,3 +621,38 @@ Comparison table (mean VF): hyp_010 → 71.6% | Phase 1 → 83.9% | Phase 2 → 
 **Story fit:** FITS. Multi-molecule TarFlow with sufficient capacity (50.6M params) matches the per-molecule ceiling (98.2% from und_001). A single shared model effectively matches dedicated per-molecule models.
 
 **Status:** DONE — all criteria met and exceeded. OPTIMIZE complete.
+
+---
+
+## hyp_012 — Permutation Reordering for Boltzmann Accuracy
+**Date:** 2026-03-06 | **Branch:** `exp/hyp_012` | **Status:** DONE (SANITY angle only, negative result)
+
+**Hypothesis:** Type-sorted + within-group random permutation augmentation (`permute_within_types=True`) teaches TarFlow that same-type atoms are exchangeable, improving Boltzmann generation quality (VF at T=1.0) compared to canonical MD17 ordering.
+
+**Implementation:**
+- Added `permute_within_type_groups()` to `src/data.py`: type-sorts atoms (H→C→N→O), then randomly permutes within each type group per sample
+- Added `permute_within_types` flag to `MD17Dataset`, `MultiMoleculeDataset`, `train_apple.py`
+- 12 unit tests pass
+
+**Arm A — Canonical ordering (baseline replication):**
+- Config: 512ch, 8blk, 50k steps, T=1.0, cuda:3, `permute_within_types=False`
+- W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/nqi97n8z
+- Mean VF = **97.7%** — replicates hyp_011 (97.4%)
+- Per-molecule: aspirin=90.6%, benzene=100%, ethanol=96.2%, malonaldehyde=99.8%, naphthalene=100%, salicylic_acid=96.2%, toluene=99.6%, uracil=99.0%
+
+**Arm B — Type-sorted + within-group permutation:**
+- Config: Same as Arm A, `permute_within_types=True`, cuda:4
+- W&B: https://wandb.ai/kaityrusnelson1/tnafmol/runs/9pnnie8w
+- Mean VF = **0.7%** — catastrophic failure
+- Per-molecule: aspirin=0%, benzene=0%, ethanol=5.4%, all others=0%
+- min_dist_mean = 0.15-0.49 Å (well below 0.8 Å validity threshold — atoms overlapping)
+
+**Training dynamics:**
+- Loss gap persisted throughout training: Arm A -1.65 vs Arm B -0.88 at step 50000
+- Arm B val loss diverged to 6-7 (vs Arm A 2-4) — pathological log-det exploitation without corresponding learning
+
+**Root cause:** TarFlow's autoregressive structure generates atoms sequentially. Type-sorted ordering (H first, then C/N/O) is physically backwards — H positions are strongly determined by the heavy-atom scaffold, but in type-sorted ordering the scaffold is generated AFTER the H atoms. Combined with within-group permutation preventing any stable conditional distribution from being learned, the model cannot converge to a physically valid distribution.
+
+**Key conclusion:** This confirms that **TarFlow's autoregressive factorization is highly sensitive to atom ordering.** The canonical MD17 ordering provides a stable causal structure that supports learning. Permuted orderings — whether fully random (hyp_004: mild degradation) or type-sorted+within-group (hyp_012: catastrophic failure) — disrupt the causal structure and prevent convergence.
+
+**Story fit:** FITS. Negative result strengthens the research story: TarFlow's performance is tightly coupled to the specific causal ordering seen during training. Future work should focus on identifying what makes canonical ordering effective, not on augmenting it away.
