@@ -133,3 +133,14 @@ Append-only log. One entry per experiment.
 **Failure modes:** None
 **Story fit:** FITS — confirms multi-molecule TarFlow can match per-molecule performance with sufficient capacity and tuning. Single shared model achieves parity with dedicated per-molecule models.
 **Concerns:** None — result exceeds stretch target (90%). Temperature sweep is a free 1-2pp improvement that should be standard practice.
+
+---
+
+### hyp_012 — Permutation Reordering for Boltzmann Accuracy
+**Date:** 2026-03-06 | **Status:** DONE
+**Tag:** `hyp_012` | **Merge commit:** `ff51f6d`
+**Result:** Two-arm OPTIMIZE: Arm A (canonical ordering) 97.7% mean VF at T=1.0 — replicates hyp_011 (97.4%). Arm B (type-sorted + within-group permutation) 0.7% mean VF — catastrophic failure across all 8 molecules. Type-sorted ordering is physically backwards for TarFlow autoregressive generation. Canonical MD17 ordering is necessary.
+**PhD quality:** CLEAN — single PhD agent, no send-backs. Implementation correct (12 unit tests). Both arms ran in parallel on separate GPUs. Source integration completed.
+**Failure modes:** None (experiment-level). The catastrophic Arm B result is the experiment's finding, not an implementation failure.
+**Story fit:** FITS — confirms TarFlow's ordering sensitivity (hyp_004 mild degradation → hyp_012 catastrophic failure). Strengthens understanding that canonical ordering is load-bearing.
+**Concerns:** None — clean negative result that closes the permutation augmentation direction.

@@ -701,3 +701,42 @@ Per-molecule at T=0.7: aspirin 95.6%, benzene 100%, ethanol 96.2%, malonaldehyde
 - Phase 3 SCALE: https://wandb.ai/kaityrusnelson1/tnafmol/runs/z7dwsfdj
 
 **Story impact:** The multi-molecule TarFlow gap is closed. 98.9% mean VF at T=0.7 essentially matches (and slightly exceeds) the 98.2% per-molecule ceiling from und_001. A single shared model achieves parity with dedicated per-molecule models. The TarFlow arm is fully optimized. DDPM baseline is the next step for head-to-head comparison.
+
+---
+
+### 2026-03-06 — hyp_012 synthesis
+**Status:** DONE | **Failure level:** None
+**Branch:** `exp/hyp_012` | **Merge commit:** `ff51f6d` | **Tag:** `hyp_012`
+
+**Experiment:** Permutation Reordering for Boltzmann Accuracy — two-arm OPTIMIZE comparing canonical ordering (Arm A) vs type-sorted + within-group permutation augmentation (Arm B), both at T=1.0.
+
+**PhD execution review:**
+- Single PhD agent, no send-backs. Implementation correct with 12 unit tests passing.
+- `permute_within_type_groups()` properly implemented in `src/data.py`: type-sorts atoms (H→C→N→O), randomly permutes within each group, padding stays at end.
+- Mutually exclusive assertion with existing `permute` flag — correct.
+- Both arms ran in parallel on separate GPUs (cuda:3, cuda:4 for full runs).
+- Source integration completed: test file promoted to `src/test_hyp012.py`, comparison plot script removed from experiment dir.
+- Process log and experiment log both updated with all commits and results.
+- Reports all committed as files (diagnostic, plan, final).
+
+**Results summary:**
+
+| Arm | Method | Mean VF (T=1.0) | Per-molecule |
+|-----|--------|-----------------|-------------|
+| **Arm A** | Canonical ordering | **97.7%** | All 8 > 90%. Best: benzene/naphthalene 100% |
+| **Arm B** | Type-sorted + within-group perm | **0.7%** | All < 6%. Only ethanol shows any signal (5.4%) |
+
+**Key findings:**
+1. Arm A replicates hyp_011 (97.4% → 97.7%) — result is reproducible.
+2. Arm B catastrophically fails — type-sorted ordering is physically backwards for TarFlow autoregressive generation (H before heavy atoms).
+3. Within-group permutation prevents stable conditional distributions from being learned.
+4. Training dynamics differ qualitatively: Arm B final loss -0.88 vs Arm A -1.65 at 50k steps. Arm B val loss diverges to 6-7 (vs 2-4 for Arm A).
+5. Failure is universal across all molecules — not size-dependent.
+
+**W&B runs:**
+- Arm A sanity val: https://wandb.ai/kaityrusnelson1/tnafmol/runs/s1k0ilhy
+- Arm B sanity val: https://wandb.ai/kaityrusnelson1/tnafmol/runs/siwvs9g7
+- Arm A full (50k): https://wandb.ai/kaityrusnelson1/tnafmol/runs/nqi97n8z
+- Arm B full (50k): https://wandb.ai/kaityrusnelson1/tnafmol/runs/9pnnie8w
+
+**Story impact:** This decisively closes the permutation augmentation direction for TarFlow. The canonical MD17 ordering is not just acceptable — it is necessary. The ordering provides a stable causal structure (heavy atoms tend to come before their dependent hydrogens) that TarFlow's autoregressive factorization requires. This strengthens the understanding that TarFlow is tightly coupled to its data representation choices, unlike diffusion models which are order-agnostic.
