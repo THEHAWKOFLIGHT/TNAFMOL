@@ -1795,4 +1795,4 @@ Full run results (50k steps):
 - Arm B full: https://wandb.ai/kaityrusnelson1/tnafmol/runs/9pnnie8w (arm_b_sanity, full, 50k steps)
 
 ### Commits
-(to be updated after final git commit)
+- `3b2dfa4` — [hyp_012] results: full run complete — Arm A 97.7% VF, Arm B 0.7% VF (perm_within_types catastrophic)
