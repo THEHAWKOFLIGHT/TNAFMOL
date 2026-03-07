@@ -9,12 +9,12 @@ Tests verify:
 5. Edge cases: single atom per type, all same type, n_real=1, no N/O atoms
 6. Mutually exclusive: permute=True and permute_within_types=True should raise
 
-Run with: python experiments/hypothesis/hyp_012_perm_reorder_boltzmann/test_permute_within_types.py
+Run with (from project root): python src/test_hyp012.py
 """
 
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import torch
 import numpy as np
