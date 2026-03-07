@@ -1,61 +1,106 @@
 {
   "exp_id": "hyp_012",
   "command": "OPTIMIZE",
-  "status": "in_progress",
+  "status": "completed",
   "created": "2026-03-06T00:00:00Z",
-  "last_updated": "2026-03-06T00:00:00Z",
+  "last_updated": "2026-03-06T17:05:00Z",
   "machine": {
     "host": "localhost",
     "user": "kai_nelson",
-    "gpu": "cuda:3-7",
+    "gpu": "cuda:3,cuda:4",
     "pid": null,
     "claude_session_id": null
   },
   "artifacts": {
     "dataset": "data/",
-    "checkpoints": [],
-    "raw_outputs": []
+    "checkpoints": [
+      "experiments/hypothesis/hyp_012_perm_reorder_boltzmann/angles/arm_a_sanity/full/best.pt",
+      "experiments/hypothesis/hyp_012_perm_reorder_boltzmann/angles/arm_b_sanity/full/best.pt"
+    ],
+    "raw_outputs": [
+      "experiments/hypothesis/hyp_012_perm_reorder_boltzmann/angles/arm_a_sanity/full/raw/",
+      "experiments/hypothesis/hyp_012_perm_reorder_boltzmann/angles/arm_b_sanity/full/raw/"
+    ]
   },
   "steps": [
     {
       "name": "diagnostic",
-      "status": "pending",
-      "acceptance": "Diagnostic Report written to reports/diagnostic_report.md with baseline analysis and root cause"
+      "status": "completed",
+      "acceptance": "Diagnostic Report written to reports/diagnostic_report.md with baseline analysis and root cause",
+      "completed_at": "2026-03-06T14:20:00Z"
     },
     {
       "name": "plan",
-      "status": "pending",
-      "acceptance": "Plan Sub-report written to reports/plan_report.md and approved by Postdoc"
+      "status": "completed",
+      "acceptance": "Plan Sub-report written to reports/plan_report.md and approved by Postdoc",
+      "completed_at": "2026-03-06T14:25:00Z"
     },
     {
       "name": "implement_permute_within_types",
-      "status": "pending",
-      "acceptance": "permute_within_type_groups() implemented in src/data.py, permute_within_types config flag in MultiMoleculeDataset/MD17Dataset, CLI arg in train_apple.py"
+      "status": "completed",
+      "acceptance": "permute_within_type_groups() implemented in src/data.py, permute_within_types config flag in MultiMoleculeDataset/MD17Dataset, CLI arg in train_apple.py",
+      "completed_at": "2026-03-06T14:30:00Z",
+      "result": {"unit_tests_passed": 12}
     },
     {
       "name": "arm_a_sanity_val",
-      "status": "pending",
-      "acceptance": "Arm A SANITY validation run complete; VF and loss reported"
+      "status": "completed",
+      "acceptance": "Arm A SANITY validation run complete; VF and loss reported",
+      "completed_at": "2026-03-06T14:45:00Z",
+      "result": {"mean_vf": 0.787, "n_steps": 5000, "wandb": "https://wandb.ai/kaityrusnelson1/tnafmol/runs/s1k0ilhy"}
     },
     {
       "name": "arm_b_sanity_val",
-      "status": "pending",
-      "acceptance": "Arm B SANITY validation run complete; VF and loss reported"
+      "status": "completed",
+      "acceptance": "Arm B SANITY validation run complete; VF and loss reported",
+      "completed_at": "2026-03-06T14:47:00Z",
+      "result": {"mean_vf": 0.002, "n_steps": 5000, "wandb": "https://wandb.ai/kaityrusnelson1/tnafmol/runs/siwvs9g7"}
     },
     {
       "name": "arm_a_optimize",
-      "status": "pending",
-      "acceptance": "Arm A OPTIMIZE completed through all applicable angles; best VF at T=1.0 reported"
+      "status": "completed",
+      "acceptance": "Arm A OPTIMIZE completed through all applicable angles; best VF at T=1.0 reported",
+      "completed_at": "2026-03-06T16:58:00Z",
+      "result": {
+        "mean_vf": 0.977,
+        "n_steps": 50000,
+        "angle": "arm_a_sanity",
+        "per_mol": {
+          "aspirin": 0.906, "benzene": 1.000, "ethanol": 0.962,
+          "malonaldehyde": 0.998, "naphthalene": 1.000, "salicylic_acid": 0.962,
+          "toluene": 0.996, "uracil": 0.990
+        },
+        "wandb": "https://wandb.ai/kaityrusnelson1/tnafmol/runs/nqi97n8z"
+      }
     },
     {
       "name": "arm_b_optimize",
-      "status": "pending",
-      "acceptance": "Arm B OPTIMIZE completed through all applicable angles; best VF at T=1.0 reported"
+      "status": "completed",
+      "acceptance": "Arm B OPTIMIZE completed through all applicable angles; best VF at T=1.0 reported",
+      "completed_at": "2026-03-06T16:46:00Z",
+      "result": {
+        "mean_vf": 0.007,
+        "n_steps": 50000,
+        "angle": "arm_b_sanity",
+        "per_mol": {
+          "aspirin": 0.000, "benzene": 0.000, "ethanol": 0.054,
+          "malonaldehyde": 0.000, "naphthalene": 0.000, "salicylic_acid": 0.000,
+          "toluene": 0.000, "uracil": 0.000
+        },
+        "wandb": "https://wandb.ai/kaityrusnelson1/tnafmol/runs/9pnnie8w"
+      }
     },
     {
       "name": "comparison_analysis",
-      "status": "pending",
-      "acceptance": "Head-to-head comparison plots and per-molecule breakdown generated"
+      "status": "completed",
+      "acceptance": "Head-to-head comparison plots and per-molecule breakdown generated",
+      "completed_at": "2026-03-06T17:00:00Z",
+      "result": {
+        "plots": [
+          "results/hyp_012_vf_comparison.png",
+          "results/hyp_012_loss_comparison.png"
+        ]
+      }
     },
     {
       "name": "source_integration",
